@@ -1,4 +1,4 @@
-import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types';
+import { CallToolRequest } from '@modelcontextprotocol/sdk/types';
 import { z } from 'zod';
 import { ToolName } from './tools';
 import {
@@ -15,7 +15,7 @@ import { readElectronLogs } from './utils/electron-logs';
 import { takeScreenshot } from './screenshot';
 import { logger } from './utils/logger';
 
-export async function handleToolCall(request: z.infer<typeof CallToolRequestSchema>) {
+export async function handleToolCall(request: CallToolRequest) {
   const { name, arguments: args } = request.params;
 
   try {
