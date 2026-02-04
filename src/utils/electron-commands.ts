@@ -381,6 +381,7 @@ export function generateClickByTextCommand(text: string): string {
         const label = analysis.ariaLabel.toLowerCase().trim();
         const title = analysis.title.toLowerCase().trim();
         const targetLower = target.toLowerCase().trim();
+        if (!targetLower) return 0;
         const targetWords = targetLower.split(/\s+/).filter(w => w.length > 0);
         
         // === EXACT MATCHES (highest priority) ===
