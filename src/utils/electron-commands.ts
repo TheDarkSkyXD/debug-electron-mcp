@@ -374,59 +374,163 @@ export function generateClickByTextCommand(text: string): string {
         };
       }
       
-      // Score element relevance
+      // Score element relevance with improved text matching
       function scoreElement(analysis, target) {
         let score = 0;
-        const text = analysis.text.toLowerCase();
-        const label = analysis.ariaLabel.toLowerCase();
-        const title = analysis.title.toLowerCase();
-        const targetLower = target.toLowerCase();
+        const text = analysis.text.toLowerCase().trim();
+        const label = analysis.ariaLabel.toLowerCase().trim();
+        const title = analysis.title.toLowerCase().trim();
+        const targetLower = target.toLowerCase().trim();
+        if (!targetLower) return 0;
+        const targetWords = targetLower.split(/\s+/).filter(w => w.length > 0);
         
-        // Exact match gets highest score
-        if (text === targetLower || label === targetLower || title === targetLower) score += 100;
+        // === EXACT MATCHES (highest priority) ===
+        // Case-sensitive exact match (highest confidence)
+        if (analysis.text.trim() === target || analysis.ariaLabel.trim() === target || analysis.title.trim() === target) {
+          return 200; // Return immediately - this is a perfect match
+        }
         
-        // Starts with target
-        if (text.startsWith(targetLower) || label.startsWith(targetLower)) score += 50;
+        // Case-insensitive exact match
+        if (text === targetLower || label === targetLower || title === targetLower) {
+          return 150; // Return immediately - very high confidence
+        }
         
-        // Contains target
-        if (text.includes(targetLower) || label.includes(targetLower) || title.includes(targetLower)) score += 25;
+        // === WORD-BOUNDARY MATCHES ===
+        // Check if target words appear as complete words in the element
+        const textWords = text.split(/\s+/).filter(w => w.length > 0);
+        const labelWords = label.split(/\s+/).filter(w => w.length > 0);
+        const titleWords = title.split(/\s+/).filter(w => w.length > 0);
         
-        // Fuzzy matching for close matches
-        const similarity = Math.max(
-          calculateSimilarity(text, targetLower),
-          calculateSimilarity(label, targetLower),
-          calculateSimilarity(title, targetLower)
-        );
-        score += similarity * 20;
+        // Count how many target words are found as complete words
+        let matchedWords = 0;
+        for (const targetWord of targetWords) {
+          if (textWords.includes(targetWord) || labelWords.includes(targetWord) || titleWords.includes(targetWord)) {
+            matchedWords++;
+          }
+        }
         
+        // All target words found as complete words = very strong match
+        if (matchedWords === targetWords.length && targetWords.length > 0) {
+          score += 80;
+        } else if (matchedWords > 0) {
+          // Partial word matches - score based on percentage
+          score += Math.round((matchedWords / targetWords.length) * 50);
+        }
+        
+        // === SUBSTRING MATCHES (lower priority) ===
+        // Starts with target (but not an exact match since we handled that above)
+        if (text.startsWith(targetLower) || label.startsWith(targetLower)) {
+          score += 30;
+        }
+        // Ends with target
+        else if (text.endsWith(targetLower) || label.endsWith(targetLower)) {
+          score += 25;
+        }
+        // Contains target as substring (word-boundary aware)
+        else if (containsAsWholePhrase(text, targetLower) || containsAsWholePhrase(label, targetLower) || containsAsWholePhrase(title, targetLower)) {
+          score += 20;
+        }
+        // Contains target anywhere (lowest substring priority)
+        else if (text.includes(targetLower) || label.includes(targetLower) || title.includes(targetLower)) {
+          score += 15;
+        }
+        
+        // === FUZZY MATCHING (conservative) ===
+        // Only apply fuzzy matching if we haven't found strong matches
+        if (score < 40) {
+          const similarity = Math.max(
+            calculateWordSimilarity(textWords, targetWords),
+            calculateWordSimilarity(labelWords, targetWords),
+            calculateWordSimilarity(titleWords, targetWords)
+          );
+          // Use word-based similarity with lower weight
+          score += Math.round(similarity * 15);
+        }
+        
+        // === BONUSES ===
         // Bonus for interactive elements
-        if (analysis.isInteractive) score += 10;
+        if (analysis.isInteractive) score += 8;
         
         // Bonus for visibility
-        if (analysis.isVisible) score += 15;
+        if (analysis.isVisible) score += 5;
         
-        // Bonus for larger elements (more likely to be main buttons)
-        if (analysis.rect.width > 100 && analysis.rect.height > 30) score += 5;
+        // Bonus for appropriately sized elements (buttons, links)
+        if (analysis.rect.width > 50 && analysis.rect.width < 500 && analysis.rect.height > 20 && analysis.rect.height < 100) {
+          score += 3;
+        }
         
-        // Bonus for higher z-index (on top)
-        score += Math.min(analysis.zIndex, 5);
+        // Small bonus for higher z-index (on top) - capped low
+        score += Math.min(analysis.zIndex, 2);
         
-        return score;
+        // === PENALTIES ===
+        // Penalty for elements with lots of extra text (less specific matches)
+        if (text.length > targetLower.length * 5 && score < 80) {
+          score -= 10;
+        }
+        
+        return Math.max(0, score);
       }
       
-      // Simple string similarity function
-      function calculateSimilarity(str1, str2) {
-        const len1 = str1.length;
-        const len2 = str2.length;
-        const maxLen = Math.max(len1, len2);
-        if (maxLen === 0) return 0;
+      // Check if phrase appears with word boundaries (simpler approach without regex)
+      function containsAsWholePhrase(haystack, needle) {
+        // Simple word boundary check without complex regex escaping
+        let idx = haystack.indexOf(needle);
         
-        let matches = 0;
-        const minLen = Math.min(len1, len2);
-        for (let i = 0; i < minLen; i++) {
-          if (str1[i] === str2[i]) matches++;
+        while (idx !== -1) {
+          let validBoundary = true;
+          
+          // Check character before needle (if exists)
+          if (idx > 0) {
+            const charBefore = haystack[idx - 1];
+            if (/[a-z0-9]/i.test(charBefore)) validBoundary = false;
+          }
+          
+          // Check character after needle (if exists)
+          if (validBoundary) {
+            const afterIdx = idx + needle.length;
+            if (afterIdx < haystack.length) {
+              const charAfter = haystack[afterIdx];
+              if (/[a-z0-9]/i.test(charAfter)) validBoundary = false;
+            }
+          }
+          
+          if (validBoundary) return true;
+          
+          // Continue searching from next position
+          idx = haystack.indexOf(needle, idx + 1);
         }
-        return matches / maxLen;
+        
+        return false;
+      }
+      
+      // Word-based similarity function (more accurate than character-level)
+      function calculateWordSimilarity(words1, words2) {
+        if (words1.length === 0 || words2.length === 0) return 0;
+        
+        let matchCount = 0;
+        const uniqueWords1 = [...new Set(words1)];
+        const uniqueWords2 = [...new Set(words2)];
+        
+        // Count words that appear in both sets
+        for (const word1 of uniqueWords1) {
+          for (const word2 of uniqueWords2) {
+            // Exact word match
+            if (word1 === word2) {
+              matchCount += 1;
+              break;
+            }
+            // One word starts with the other (prefix match)
+            if (word1.length >= 3 && word2.length >= 3) {
+              if (word1.startsWith(word2) || word2.startsWith(word1)) {
+                matchCount += 0.5;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Return ratio based on target words (words2)
+        return matchCount / uniqueWords2.length;
       }
       
       // Find all potentially clickable elements
@@ -438,7 +542,7 @@ export function generateClickByTextCommand(text: string): string {
         
         if (analysis.isVisible && (analysis.isInteractive || analysis.text || analysis.ariaLabel)) {
           const score = scoreElement(analysis, targetText);
-          if (score > 5) { // Only consider elements with some relevance
+          if (score > 15) { // Only consider elements with meaningful relevance
             candidates.push({ ...analysis, score });
           }
         }
@@ -452,9 +556,9 @@ export function generateClickByTextCommand(text: string): string {
       candidates.sort((a, b) => b.score - a.score);
       const best = candidates[0];
       
-      // Additional validation before clicking
-      if (best.score < 15) {
-        return \`Found potential matches but confidence too low (score: \${best.score}). Best match was: "\${best.text || best.ariaLabel}" - try being more specific.\`;
+      // Additional validation before clicking (raised threshold to reduce false positives)
+      if (best.score < 40) {
+        return \`Found potential matches but confidence too low (score: \${best.score}). Best match was: "\${best.text || best.ariaLabel}" - try being more specific or use click_by_selector for exact targeting.\`;
       }
       
       // Enhanced clicking for React components with duplicate prevention
