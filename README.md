@@ -6,6 +6,16 @@
 
 A powerful Model Context Protocol (MCP) server that provides comprehensive Electron application automation, debugging, and observability capabilities. Supercharge your Electron development workflow with AI-powered automation through Chrome DevTools Protocol integration.
 
+## 🎯 What Makes This Special
+
+Transform your Electron development experience with **AI-powered automation**:
+
+- **🔄 Real-time UI Automation**: Click buttons, fill forms, and interact with any Electron app programmatically
+- **📸 Visual Debugging**: Take screenshots and capture application state without interrupting development
+- **🔍 Deep Inspection**: Extract DOM elements, application data, and performance metrics in real-time
+- **⚡ DevTools Protocol Integration**: Universal compatibility with any Electron app - no modifications required
+- **🚀 Development Observability**: Monitor logs, system info, and application behavior seamlessly
+
 ## 🚀 Key Features
 
 ### 🎮 Application Control & Automation
@@ -91,15 +101,6 @@ See the Electron MCP Server in action:
 
 *Watch how easy it is to automate Electron applications with AI-powered MCP commands.*
 
-## 🎯 What Makes This Special
-
-Transform your Electron development experience with **AI-powered automation**:
-
-- **🔄 Real-time UI Automation**: Click buttons, fill forms, and interact with any Electron app programmatically
-- **📸 Visual Debugging**: Take screenshots and capture application state without interrupting development
-- **🔍 Deep Inspection**: Extract DOM elements, application data, and performance metrics in real-time
-- **⚡ DevTools Protocol Integration**: Universal compatibility with any Electron app - no modifications required
-- **🚀 Development Observability**: Monitor logs, system info, and application behavior seamlessly
 
 ## ⚡ Enabling Remote Debugging (Required)
 
