@@ -99,7 +99,7 @@ describe('Screenshot Module', () => {
 
             mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
 
-            const result = await takeScreenshot(undefined, 'Settings');
+            const result = await takeScreenshot({ windowTitle: 'Settings' });
 
             expect(mockedChromium.connectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
             expect(result.base64).toBeDefined();
@@ -132,10 +132,72 @@ describe('Screenshot Module', () => {
 
             mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
 
-            const result = await takeScreenshot('/tmp/screenshot.png');
+            const result = await takeScreenshot({ outputPath: '/tmp/screenshot.png' });
 
             expect(mockedWriteFile).toHaveBeenCalledWith('/tmp/screenshot.png', screenshotBuffer);
             expect(result.filePath).toBe('/tmp/screenshot.png');
+        });
+
+        it('should find window by targetId when specified', async () => {
+            const mockPage = {
+                url: () => 'file:///app/settings.html',
+                title: () => Promise.resolve('Settings'),
+                screenshot: vi.fn().mockResolvedValue(Buffer.from('TARGET_ID_PNG')),
+            };
+
+            const mockContext = {
+                pages: () => [mockPage],
+            };
+
+            const mockBrowser = {
+                contexts: () => [mockContext],
+                close: vi.fn(),
+            };
+
+            mockedScanApps.mockResolvedValue([
+                {
+                    port: 9222,
+                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
+                },
+                {
+                    port: 9223,
+                    targets: [{ id: 'target-abc-123', title: 'Settings', url: 'file:///app/settings.html', type: 'page' }],
+                },
+            ]);
+
+            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+
+            const result = await takeScreenshot({ targetId: 'target-abc-123' });
+
+            // Should connect to port 9223 where the target with id 'target-abc-123' was found
+            expect(mockedChromium.connectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
+            expect(result.base64).toBeDefined();
+        });
+
+        it('should throw error when targetId not found', async () => {
+            mockedScanApps.mockResolvedValue([
+                {
+                    port: 9222,
+                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
+                },
+            ]);
+
+            await expect(takeScreenshot({ targetId: 'non-existent-id' })).rejects.toThrow(
+                'No window found with targetId "non-existent-id"'
+            );
+        });
+
+        it('should throw error when windowTitle not found', async () => {
+            mockedScanApps.mockResolvedValue([
+                {
+                    port: 9222,
+                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
+                },
+            ]);
+
+            await expect(takeScreenshot({ windowTitle: 'NonExistent' })).rejects.toThrow(
+                'No window found with title matching "NonExistent"'
+            );
         });
 
         it('should skip DevTools pages when looking for target page', async () => {

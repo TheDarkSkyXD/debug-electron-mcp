@@ -53,7 +53,14 @@ export const TakeScreenshotSchema = z.object({
     .string()
     .optional()
     .describe('Path to save the screenshot (optional, defaults to temp directory)'),
-  windowTitle: z.string().optional().describe('Specific window title to screenshot (optional)'),
+  targetId: z
+    .string()
+    .optional()
+    .describe('CDP target ID to screenshot a specific window (exact match, takes priority over windowTitle)'),
+  windowTitle: z
+    .string()
+    .optional()
+    .describe('Window title to screenshot (case-insensitive partial match). Use list_electron_windows to see available windows.'),
 });
 
 export const ReadElectronLogsSchema = z.object({

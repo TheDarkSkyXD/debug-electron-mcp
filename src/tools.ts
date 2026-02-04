@@ -17,19 +17,29 @@ export enum ToolName {
   LIST_ELECTRON_WINDOWS = 'list_electron_windows',
 }
 
+// Helper function to convert Zod schemas to JSON Schema with proper typing
+// Using 'as any' to work around deep type instantiation issues with zod-to-json-schema
+const toJsonSchema = (schema: any): ToolInput => zodToJsonSchema(schema) as ToolInput;
+
 // Define tools available to the MCP server
 export const tools = [
   {
     name: ToolName.GET_ELECTRON_WINDOW_INFO,
     description:
       'Get information about running Electron applications and their windows. Automatically detects any Electron app with remote debugging enabled (port 9222).',
-    inputSchema: zodToJsonSchema(GetElectronWindowInfoSchema) as ToolInput,
+    inputSchema: toJsonSchema(GetElectronWindowInfoSchema),
   },
   {
     name: ToolName.TAKE_SCREENSHOT,
     description:
-      'Take a screenshot of any running Electron application window. Returns base64 image data for AI analysis. No files created unless outputPath is specified.',
-    inputSchema: zodToJsonSchema(TakeScreenshotSchema) as ToolInput,
+      `Take a screenshot of any running Electron application window. Returns base64 image data for AI analysis. No files created unless outputPath is specified.
+
+Multi-window support:
+- targetId: Specify a CDP target ID to screenshot a specific window (exact match, takes priority)
+- windowTitle: Specify a window title to target (case-insensitive partial match)
+- If neither is specified, screenshots the first available main window (backward compatible)
+- Use 'list_electron_windows' to see available windows and their IDs`,
+    inputSchema: toJsonSchema(TakeScreenshotSchema),
   },
   {
     name: ToolName.SEND_COMMAND_TO_ELECTRON,
@@ -66,18 +76,18 @@ Multi-window support:
 - windowTitle: Specify a window title to target (case-insensitive partial match)
 - If neither is specified, commands are sent to the first available main window (backward compatible)
 - Use 'list_electron_windows' to see available windows and their IDs`,
-    inputSchema: zodToJsonSchema(SendCommandToElectronSchema) as ToolInput,
+    inputSchema: toJsonSchema(SendCommandToElectronSchema),
   },
   {
     name: ToolName.LIST_ELECTRON_WINDOWS,
     description:
       "List all available Electron window targets across all detected applications. Returns window IDs, titles, URLs, and ports. Use the returned IDs with send_command_to_electron's targetId parameter to target specific windows.",
-    inputSchema: zodToJsonSchema(ListElectronWindowsSchema) as ToolInput,
+    inputSchema: toJsonSchema(ListElectronWindowsSchema),
   },
   {
     name: ToolName.READ_ELECTRON_LOGS,
     description:
       'Read console logs and output from running Electron applications. Useful for debugging and monitoring app behavior.',
-    inputSchema: zodToJsonSchema(ReadElectronLogsSchema) as ToolInput,
+    inputSchema: toJsonSchema(ReadElectronLogsSchema),
   },
 ];

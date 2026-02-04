@@ -35,8 +35,8 @@ export async function handleToolCall(request: CallToolRequest) {
       }
 
       case ToolName.TAKE_SCREENSHOT: {
-        const { outputPath, windowTitle } = TakeScreenshotSchema.parse(args);
-        const result = await takeScreenshot(outputPath, windowTitle);
+        const { outputPath, targetId, windowTitle } = TakeScreenshotSchema.parse(args);
+        const result = await takeScreenshot({ outputPath, targetId, windowTitle });
 
         const content: any[] = [];
 
