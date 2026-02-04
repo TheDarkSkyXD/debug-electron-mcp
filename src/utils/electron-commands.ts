@@ -474,23 +474,33 @@ export function generateClickByTextCommand(text: string): string {
       // Check if phrase appears with word boundaries (simpler approach without regex)
       function containsAsWholePhrase(haystack, needle) {
         // Simple word boundary check without complex regex escaping
-        const idx = haystack.indexOf(needle);
-        if (idx === -1) return false;
+        let idx = haystack.indexOf(needle);
         
-        // Check character before needle (if exists)
-        if (idx > 0) {
-          const charBefore = haystack[idx - 1];
-          if (/[a-z0-9]/i.test(charBefore)) return false;
+        while (idx !== -1) {
+          let validBoundary = true;
+          
+          // Check character before needle (if exists)
+          if (idx > 0) {
+            const charBefore = haystack[idx - 1];
+            if (/[a-z0-9]/i.test(charBefore)) validBoundary = false;
+          }
+          
+          // Check character after needle (if exists)
+          if (validBoundary) {
+            const afterIdx = idx + needle.length;
+            if (afterIdx < haystack.length) {
+              const charAfter = haystack[afterIdx];
+              if (/[a-z0-9]/i.test(charAfter)) validBoundary = false;
+            }
+          }
+          
+          if (validBoundary) return true;
+          
+          // Continue searching from next position
+          idx = haystack.indexOf(needle, idx + 1);
         }
         
-        // Check character after needle (if exists)
-        const afterIdx = idx + needle.length;
-        if (afterIdx < haystack.length) {
-          const charAfter = haystack[afterIdx];
-          if (/[a-z0-9]/i.test(charAfter)) return false;
-        }
-        
-        return true;
+        return false;
       }
       
       // Word-based similarity function (more accurate than character-level)
