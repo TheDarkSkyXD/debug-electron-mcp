@@ -40,7 +40,7 @@ A powerful Model Context Protocol (MCP) server that provides comprehensive Elect
     "servers": {
       "electron": {
         "command": "npx",
-        "args": ["-y", "@debugelectron/electron-mcp-server@latest"]
+        "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
       }
     }
   }
@@ -53,7 +53,7 @@ A powerful Model Context Protocol (MCP) server that provides comprehensive Elect
   "mcpServers": {
     "electron": {
       "command": "npx",
-      "args": ["-y", "@debugelectron/electron-mcp-server@latest"]
+      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
     }
   }
 }
@@ -65,7 +65,7 @@ A powerful Model Context Protocol (MCP) server that provides comprehensive Elect
   "mcpServers": {
     "electron": {
       "command": "npx",
-      "args": ["-y", "@debugelectron/electron-mcp-server@latest"]
+      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
     }
   }
 }
@@ -78,7 +78,7 @@ That's it! The server is ready to use.
 See [Quick Start](#-quick-start) above for MCP configuration. For global installation:
 
 ```bash
-npm install -g @debugelectron/electron-mcp-server
+npm install -g @debugelectron/debug-electron-mcp
 ```
 
 ## Demo
