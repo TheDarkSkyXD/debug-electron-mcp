@@ -1,6 +1,6 @@
 ﻿# Debug Electron MCP
 
-[![GitHub license](https://img.shields.io/github/license/TheDarkSkyXD/debug-electron-mcp)](https://github.com/TheDarkSkyXD/debug-electron-mcp/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@debugelectron/debug-electron-mcp)](https://www.npmjs.com/package/@debugelectron/debug-electron-mcp)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blue)](https://modelcontextprotocol.io)
 
@@ -770,7 +770,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙌 Credits & Attribution
 
