@@ -2,21 +2,34 @@ import { chromium } from 'playwright';
 import * as fs from 'fs/promises';
 import { logger } from './utils/logger';
 import { scanForElectronApps } from './utils/electron-discovery';
+import { WindowTargetOptions } from './utils/electron-connection';
+
+/** Options for taking a screenshot */
+export interface ScreenshotOptions {
+  /** Path to save the screenshot (optional, defaults to in-memory only) */
+  outputPath?: string;
+  /** CDP target ID to screenshot a specific window (exact match, takes priority over windowTitle) */
+  targetId?: string;
+  /** Window title to screenshot (case-insensitive partial match) */
+  windowTitle?: string;
+}
 
 /**
  * Take a screenshot of the running Electron application using Chrome DevTools Protocol
  */
 export async function takeScreenshot(
-  outputPath?: string,
-  windowTitle?: string,
+  options: ScreenshotOptions = {},
 ): Promise<{
   filePath?: string;
   base64: string;
   data: string;
   error?: string;
 }> {
+  const { outputPath, targetId, windowTitle } = options;
+
   logger.info('📸 Taking screenshot of Electron application', {
     outputPath,
+    targetId,
     windowTitle,
     timestamp: new Date().toISOString(),
   });
@@ -28,16 +41,45 @@ export async function takeScreenshot(
       throw new Error('No running Electron applications found with remote debugging enabled');
     }
 
-    // Use the first app found (or find by title if specified)
+    // Find target app and target based on options
+    // Priority: targetId > windowTitle > first available window
     let targetApp = apps[0];
-    if (windowTitle) {
-      const namedApp = apps.find((app) =>
-        app.targets.some((target) =>
-          target.title?.toLowerCase().includes(windowTitle.toLowerCase()),
-        ),
-      );
-      if (namedApp) {
-        targetApp = namedApp;
+    let targetInfo: { port: number; targetId?: string } | null = null;
+
+    if (targetId) {
+      // Search for exact targetId match across all apps
+      for (const app of apps) {
+        const match = app.targets.find((t: any) => t.id === targetId);
+        if (match) {
+          targetApp = app;
+          targetInfo = { port: app.port, targetId: match.id };
+          logger.debug(`Found target by ID "${targetId}" on port ${app.port}`);
+          break;
+        }
+      }
+      if (!targetInfo) {
+        throw new Error(
+          `No window found with targetId "${targetId}". Use list_electron_windows to see available targets.`,
+        );
+      }
+    } else if (windowTitle) {
+      // Search for case-insensitive partial title match
+      const searchTitle = windowTitle.toLowerCase();
+      for (const app of apps) {
+        const match = app.targets.find(
+          (t: any) => t.title && t.title.toLowerCase().includes(searchTitle),
+        );
+        if (match) {
+          targetApp = app;
+          targetInfo = { port: app.port, targetId: match.id };
+          logger.debug(`Found target by title "${windowTitle}" on port ${app.port}`);
+          break;
+        }
+      }
+      if (!targetInfo) {
+        throw new Error(
+          `No window found with title matching "${windowTitle}". Use list_electron_windows to see available targets.`,
+        );
       }
     }
 
@@ -58,24 +100,36 @@ export async function takeScreenshot(
       throw new Error('No pages found in the browser context');
     }
 
-    // Find the main application page (skip DevTools pages)
+    // Find the target page
     let targetPage = pages[0];
-    for (const page of pages) {
-      const url = page.url();
-      const title = await page.title().catch(() => '');
 
-      // Skip DevTools and about:blank pages
-      if (
-        !url.includes('devtools://') &&
-        !url.includes('about:blank') &&
-        title &&
-        !title.includes('DevTools')
-      ) {
-        // If windowTitle is specified, try to match it
-        if (windowTitle && title.toLowerCase().includes(windowTitle.toLowerCase())) {
-          targetPage = page;
-          break;
-        } else if (!windowTitle) {
+    if (targetInfo?.targetId) {
+      // If we found a specific target, try to find the matching page
+      // Note: We need to find the page by URL/title since CDP targetId doesn't directly map to Playwright pages
+      const targetData = targetApp.targets.find((t: any) => t.id === targetInfo!.targetId);
+      if (targetData) {
+        for (const page of pages) {
+          const pageUrl = page.url();
+          // Match by URL since that's more reliable than title
+          if (pageUrl === targetData.url) {
+            targetPage = page;
+            break;
+          }
+        }
+      }
+    } else {
+      // Find the main application page (skip DevTools pages)
+      for (const page of pages) {
+        const url = page.url();
+        const title = await page.title().catch(() => '');
+
+        // Skip DevTools and about:blank pages
+        if (
+          !url.includes('devtools://') &&
+          !url.includes('about:blank') &&
+          title &&
+          !title.includes('DevTools')
+        ) {
           targetPage = page;
           break;
         }
