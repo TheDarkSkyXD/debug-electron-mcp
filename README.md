@@ -48,7 +48,7 @@ Transform your Electron development experience with **AI-powered automation**:
 {
   "mcp": {
     "servers": {
-      "electron": {
+      "debug-electron-mcp": {
         "command": "npx",
         "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
       }
@@ -61,7 +61,7 @@ Transform your Electron development experience with **AI-powered automation**:
 ```json
 {
   "mcpServers": {
-    "electron": {
+    "debug-electron-mcp": {
       "command": "npx",
       "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
     }
@@ -73,7 +73,7 @@ Transform your Electron development experience with **AI-powered automation**:
 ```json
 {
   "mcpServers": {
-    "electron": {
+    "debug-electron-mcp": {
       "command": "npx",
       "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
     }
