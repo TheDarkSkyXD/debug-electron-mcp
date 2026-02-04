@@ -167,3 +167,6 @@ CLAUDE.md
 
 # Agent Artifacts
 .agent/
+
+# Test Payloads
+payload.js
