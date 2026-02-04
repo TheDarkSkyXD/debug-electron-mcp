@@ -4544,8 +4544,8 @@ async function handleToolCall(request) {
 
 // Create MCP server instance
 const server = new Server({
-    name: 'electron-mcp-server',
-    version: '1.5.1',
+    name: '@debugelectron/electron-mcp-server',
+    version: '1.6.6',
 }, {
     capabilities: {
         tools: {},

@@ -1,7 +1,7 @@
 ﻿# Debug Electron MCP
 
 [![GitHub license](https://img.shields.io/github/license/TheDarkSkyXD/debug-electron-mcp)](https://github.com/TheDarkSkyXD/debug-electron-mcp/blob/master/LICENSE)
-[![npm version](https://img.shields.io/npm/v/@debugelectron/debug-electron-mcp)](https://www.npmjs.com/package/@debugelectron/debug-electron-mcp)
+[![npm version](https://img.shields.io/npm/v/@debugelectron/electron-mcp-server)](https://www.npmjs.com/package/@debugelectron/electron-mcp-server)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blue)](https://modelcontextprotocol.io)
 
 A powerful Model Context Protocol (MCP) server that provides comprehensive Electron application automation, debugging, and observability capabilities. Supercharge your Electron development workflow with AI-powered automation through Chrome DevTools Protocol integration.

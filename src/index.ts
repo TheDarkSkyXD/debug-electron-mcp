@@ -10,8 +10,8 @@ import { logger } from './utils/logger';
 // Create MCP server instance
 const server = new Server(
   {
-    name: 'debug-electron-mcp',
-    version: '1.6.5',
+    name: '@debugelectron/electron-mcp-server',
+    version: '1.6.6',
   },
   {
     capabilities: {
