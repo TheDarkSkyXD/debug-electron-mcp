@@ -1,6 +1,6 @@
 {
   "name": "@debugelectron/debug-electron-mcp",
-  "version": "1.6.9",
+  "version": "1.6.10",
   "description": "MCP server for Electron application automation and management. See MCP_USAGE_GUIDE.md for proper argument structure examples.",
   "main": "dist/index.js",
   "publishConfig": {
