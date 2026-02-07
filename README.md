@@ -1,843 +1,267 @@
 ﻿# Debug Electron MCP
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@debugelectron/debug-electron-mcp)](https://www.npmjs.com/package/@debugelectron/debug-electron-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blue)](https://modelcontextprotocol.io)
 
-A powerful Model Context Protocol (MCP) server that provides comprehensive Electron application automation, debugging, and observability capabilities. Supercharge your Electron development workflow with AI-powered automation through Chrome DevTools Protocol integration.
+**The ultimate Model Context Protocol (MCP) server for automating, debugging, and testing Electron applications.**
 
-## 🎯 What Makes This Special
-
-Transform your Electron development experience with **AI-powered automation**:
-
-- **🔄 Real-time UI Automation**: Click buttons, fill forms, and interact with any Electron app programmatically
-- **📸 Visual Debugging**: Take screenshots and capture application state without interrupting development
-- **🔍 Deep Inspection**: Extract DOM elements, application data, and performance metrics in real-time
-- **⚡ DevTools Protocol Integration**: Universal compatibility with any Electron app - no modifications required
-- **🚀 Development Observability**: Monitor logs, system info, and application behavior seamlessly
-
-## 🚀 Key Features
-
-### 🎮 Application Control & Automation
-
-- **Launch & Manage**: Start, stop, and monitor Electron applications with full lifecycle control
-- **Interactive Automation**: Execute JavaScript code directly in running applications via WebSocket
-- **UI Testing**: Automate button clicks, form interactions, and user workflows
-- **Process Management**: Track PIDs, monitor resource usage, and handle graceful shutdowns
-
-### 📊 Advanced Observability
-
-- **Screenshot Capture**: Non-intrusive visual snapshots using Playwright and Chrome DevTools Protocol
-- **Real-time Logs**: Stream application logs (main process, renderer, console) with filtering
-- **Window Information**: Get detailed window metadata, titles, URLs, and target information
-- **System Monitoring**: Track memory usage, uptime, and performance metrics
-
-### 🛠️ Development Productivity
-
-- **Universal Compatibility**: Works with any Electron app without requiring code modifications
-- **DevTools Integration**: Leverage Chrome DevTools Protocol for powerful debugging capabilities
-- **Build Automation**: Cross-platform building for Windows, macOS, and Linux
-- **Environment Management**: Clean environment handling and debugging port configuration
-
-## 🚀 Quick Start
-
-**Just add to your MCP config and go!** No environment variables needed.
-
-**VS Code:**
-```json
-{
-  "mcp": {
-    "servers": {
-      "debug-electron-mcp": {
-        "command": "npx",
-        "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
-      }
-    }
-  }
-}
-```
-
-**Claude Desktop:**
-```json
-{
-  "mcpServers": {
-    "debug-electron-mcp": {
-      "command": "npx",
-      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
-    }
-  }
-}
-```
-
-**Cursor IDE** (`%APPDATA%\Cursor\mcp_config.json`):
-```json
-{
-  "mcpServers": {
-    "debug-electron-mcp": {
-      "command": "npx",
-      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
-    }
-  }
-}
-```
-
-That's it! The server is ready to use.
-
-## 📦 Installation
-
-See [Quick Start](#-quick-start) above for MCP configuration. For global installation:
-
-```bash
-npm install -g @debugelectron/debug-electron-mcp
-```
-
-## Demo
-
-See the Electron MCP Server in action:
-
-[![Watch Demo Video](https://vumbnail.com/1104937830.jpg)](https://vimeo.com/1104937830)
-
-**[🎬 Watch Full Demo on Vimeo](https://vimeo.com/1104937830)**
-
-*Watch how easy it is to automate Electron applications with AI-powered MCP commands.*
-
-
-## ⚡ Enabling Remote Debugging (Required)
-
-**CRITICAL**: For the Electron MCP Server to communicate with your Electron application, the app **MUST** be started with Chrome DevTools Protocol (CDP) remote debugging enabled on port 9222. Without this, the MCP server cannot connect to or control the application.
-
-### 🔍 How It Works
-
-The Electron MCP Server uses the Chrome DevTools Protocol (CDP) to:
-- Connect to your Electron app via WebSocket
-- Execute JavaScript in the renderer process
-- Capture screenshots and inspect the DOM
-- Automate UI interactions (clicks, form fills, etc.)
-
-The server automatically scans ports **9222-9225** to find running Electron apps with debugging enabled.
-
-### 📋 Configuration Methods
-
-Choose **ONE** of the following methods to enable remote debugging:
+Use the power of AI to interact with ANY Electron application. Inspect the DOM, click buttons by text, fill forms, capture screenshots, and read console logs—all through a standardized protocol compatible with Claude Desktop, Cursor, and other MCP clients.
 
 ---
 
-#### Method 1: Command Line Flag (Recommended for Quick Testing)
+## 📚 Table of Contents
 
-Start your Electron app with the `--remote-debugging-port` flag:
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Configuration (Required)](#-configuration-required)
+- [Usage Guide](#-usage-guide)
+  - [Core Workflow](#core-workflow)
+  - [Tool Reference](#tool-reference)
+  - [Interaction Commands](#interaction-commands)
+- [Development](#-development)
+- [Troubleshooting](#-troubleshooting)
+- [License](#-license)
+
+---
+
+## ✨ Features
+
+### 🔌 Universal Compatibility
+- **Works with ANY Electron app**: No source code modifications required.
+- **Zero-setup integration**: Connects purely via Chrome DevTools Protocol (CDP).
+- **Cross-platform**: Supports Windows, macOS, and Linux.
+
+### 🤖 Smart UI Automation
+- **Semantic Interaction**: specific `click_by_text` and `fill_input` commands that "just work."
+- **Visual Intelligence**: Take screenshots of specific windows to verify state.
+- **Robust Actions**: Advanced `drag`, `hover`, `type`, and `wait` commands for complex workflows.
+
+### 🔍 Deep Observability
+- **DOM Inspection**: `get_page_structure` gives AI a clean copy of the interactive operational map.
+- **Log Streaming**: Read main process, renderer, and console logs in real-time.
+- **Performance**: Monitor memory, timing, and system metrics.
+
+---
+
+## 🚀 Quick Start
+
+Add the server to your MCP configuration file. No environment variables are usually needed.
+
+### VS Code / Cursor
+Add to your `mcp_config.json` (usually in `%APPDATA%\Cursor\mcp_config.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "debug-electron-mcp": {
+      "command": "npx",
+      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
+    }
+  }
+}
+```
+
+### Antigravity
+Add to your Antigravity configuration:
+
+```json
+{
+  "mcpServers": {
+    "debug-electron-mcp": {
+      "command": "npx",
+      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
+    }
+  }
+}
+```
+
+### Claude Desktop
+Add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "debug-electron-mcp": {
+      "command": "npx",
+      "args": ["-y", "@debugelectron/debug-electron-mcp@latest"]
+    }
+  }
+}
+```
+
+---
+
+## 🛠 Configuration (Required)
+
+**CRITICAL:** For this MCP server to work, your target Electron application **must be running with remote debugging enabled on port 9222**.
+
+Choose **ONE** of the methods below to enable this:
+
+### Method 1: Command Line Flag (Easiest)
+Launch your app with the `--remote-debugging-port` flag.
 
 ```bash
-# Using electron directly
+# Direct electron launch
 electron . --remote-debugging-port=9222
 
-# Using npx
+# Via npx
 npx electron . --remote-debugging-port=9222
 
 # Via npm script
 npm start -- --remote-debugging-port=9222
 ```
 
----
+### Method 2: package.json (Persistent)
+Add a debug script to your `package.json`:
 
-#### Method 2: Modify package.json Scripts (Recommended for Projects)
-
-This is the most reliable method. It creates a dedicated command for launching your app with AI capabilities enabled.
-
-**Step 1: Open your `package.json` file**
-Locate the file in the root of your project.
-
-**Step 2: Find the `"scripts"` section**
-It usually looks like this:
 ```json
 "scripts": {
   "start": "electron .",
-  "build": "electron-builder"
+  "dev:debug": "electron . --remote-debugging-port=9222"
 }
 ```
+Then run `npm run dev:debug`.
 
-**Step 3: Add the debug script**
-Add a new script (e.g., `"dev"`) that includes the `--remote-debugging-port=9222` flag.
-*Make sure to add a comma (`,`) to the end of the previous line!*
-
-```json
-"scripts": {
-  "start": "electron .",  <-- Add comma here if needed
-  "build": "electron-builder", <-- Add comma here
-  "dev": "electron . --remote-debugging-port=9222"  <-- ADD THIS LINE
-}
-```
-
-**Note for Frameworks:**
-- If you use **Electron Forge**: `"dev": "electron-forge start -- -- --remote-debugging-port=9222"`
-- If you use **Electron Builder**: `"dev": "electron-builder start -- --remote-debugging-port=9222"`
-- Generally, append the flag after your usual start command.
-
-**Step 4: Run the script**
-Execute the command in your terminal:
-
-```bash
-npm run dev
-```
-
-Your app will launch with port 9222 open, ready for the MCP server to connect.
-
----
-
-#### Method 3: Programmatic Configuration (Best for Production Apps)
-
-Add this code to your Electron app's **main process** file (usually `main.js` or `main.ts`):
+### Method 3: Programmatic (Best for Codebase)
+Updates your `main.js` to automatically enable debugging in dev mode.
 
 ```javascript
 const { app } = require('electron');
 
-// Enable remote debugging based on environment or command line args
-const enableRemoteDebugging = 
-  process.env.NODE_ENV === 'development' ||
-  process.env.ELECTRON_MCP_DEBUG === 'true' ||
-  process.argv.includes('--dev') ||
-  process.argv.includes('--remote-debugging-port=9222');
-
-if (enableRemoteDebugging) {
-  // IMPORTANT: This must be called BEFORE app.whenReady()
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
-  console.log('🔧 Remote debugging enabled on port 9222');
-}
-
-// Rest of your app initialization...
-app.whenReady().then(() => {
-  // Create windows, etc.
-});
-```
-
-**TypeScript version:**
-
-```typescript
-import { app } from 'electron';
-
-const enableRemoteDebugging = 
-  process.env.NODE_ENV === 'development' ||
-  process.env.ELECTRON_MCP_DEBUG === 'true' ||
-  process.argv.includes('--dev');
-
-if (enableRemoteDebugging) {
+// Enable if in dev mode or flag is present
+if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222');
   console.log('🔧 Remote debugging enabled on port 9222');
 }
 ```
+
+### ✅ Verification
+Open `http://localhost:9222/json` in your browser. If you see a JSON list of targets, you are ready!
 
 ---
 
-#### Method 4: Environment Variable (CI/CD Friendly)
+## 📖 Usage Guide
 
-Set an environment variable before starting your app:
+### Core Workflow
 
-**Windows (PowerShell):**
-```powershell
-$env:ELECTRON_MCP_DEBUG = "true"
-npm start
-```
+To effectively control an app, follow this "Loop of Action":
 
-**Windows (CMD):**
-```cmd
-set ELECTRON_MCP_DEBUG=true && npm start
-```
+1.  **Inspect**: Use `get_page_structure` to see what buttons and inputs are available.
+2.  **Target**: Identify the element you want (e.g., a button with text "Login").
+3.  **Act**: Send a command like `click_by_text` or `fill_input`.
+4.  **Verify**: Use `take_screenshot` or `get_title` to confirm the action succeeded.
 
-**macOS/Linux:**
+### Tool Reference
+
+These are the high-level tools exposed by the MCP server:
+
+| Tool | Description |
+|------|-------------|
+| `launch_electron_app` | Starts an Electron app with debugging enabled automatically. |
+| `get_electron_window_info` | Lists all open windows, their titles, and connection IDs. |
+| `list_electron_windows` | Lists all available window targets across applications. |
+| `take_screenshot` | Captures a screenshot of a specific window or the active one. |
+| `read_electron_logs` | Streams console logs from the app (great for debugging errors). |
+| **`send_command_to_electron`** | **The main tool.** Executes specific actions inside the app. |
+| `close_electron_app` | Terminates the application. |
+
+### Interaction Commands
+
+Use these inside `send_command_to_electron`:
+
+#### 🖱️ Clicking & Selection
+| Command | Description |
+|---------|-------------|
+| **`click_by_text`** | *Best for buttons/links.* Usage: `{"text": "Submit"}` |
+| **`click_by_selector`** | *Precise control.* Usage: `{"selector": ".submit-btn"}` |
+| **`click_button`** | *Legacy click command.* Usage: `{"selector": "#btn"}` |
+| **`select_option`** | *For dropdowns.* Usage: `{"text": "Category", "value": "Books"}` |
+| **`hover`** | *Hover over elements.* Usage: `{"selector": ".tooltip-trigger"}` |
+| **`drag`** | *Drag and drop.* Usage: `{"startSelector": "#item", "endSelector": "#cart"}` |
+
+#### 📝 Input & Forms
+| Command | Description |
+|---------|-------------|
+| **`fill_input`** | *Smart filling.* Usage: `{"placeholder": "Username", "value": "admin"}` |
+| **`type`** | *Simulates real typing.* Usage: `{"text": "Hello World", "slowly": true}` |
+| **`verify_form_state`** | *Checks validity of all forms.* |
+| **`send_keyboard_shortcut`** | *Send key combinations.* Usage: `{"text": "Ctrl+S"}` |
+
+#### 👁️ Observation
+| Command | Description |
+|---------|-------------|
+| **`get_page_structure`** | *Returns a simplified JSON map of the UI.* |
+| **`find_elements`** | *Detailed list of all interactive elements.* |
+| **`is_visible`** | *Checks visibility.* Usage: `{"selector": "#error-modal"}` |
+| **`get_attribute`** | *Get attributes.* Usage: `{"selector": "img", "attribute": "src"}` |
+| **`count`** | *Count matching elements.* Usage: `{"selector": "li.item"}` |
+| **`debug_elements`** | *Get detailed debug info for buttons and inputs.* |
+| **`get_title`** | *Get the document title.* |
+| **`get_url`** | *Get the current URL.* |
+| **`get_body_text`** | *Get the visible body text.* |
+
+#### ⚙️ Advanced
+| Command | Description |
+|---------|-------------|
+| **`wait`** | *Wait for element/time.* Usage: `{"duration": 1000}` or `{"text": "Loading"}` |
+| **`navigate_to_hash`** | *Navigate to hash routes.* Usage: `{"text": "settings"}` |
+| **`eval`** | *Execute custom JavaScript.* Usage: `{"code": "alert('Hello') "}` |
+| **`console_log`** | *Write to app console.* Usage: `{"message": "Hello"}` |
+
+---
+
+## 🏗️ Development
+
+### Prerequisites
+- Node.js 18+
+- npm or pnpm
+
+### Setup
 ```bash
-ELECTRON_MCP_DEBUG=true npm start
+git clone https://github.com/TheDarkSkyXD/debug-electron-mcp.git
+cd debug-electron-mcp
+npm install
+npm run build
 ```
 
-Then check for this variable in your main process (see Method 3).
+### Testing
+We have a comprehensive test suite including React compatibility tests.
+```bash
+# Run unit tests
+npm test
 
----
-
-### ✅ Verifying Remote Debugging is Enabled
-
-When remote debugging is properly enabled, you'll see a message like this in your console:
-
-```
-DevTools listening on ws://127.0.0.1:9222/devtools/browser/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+# Run integration tests
+npm run test:react
 ```
 
-You can also verify by opening this URL in a browser:
-```
-http://localhost:9222/json
-```
-
-This should return a JSON array of available debugging targets.
-
-### 🚨 Common Issues
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| "No running Electron application found" | App not started with debugging | Use `--remote-debugging-port=9222` flag |
-| Port 9222 already in use | Another debugger or Electron app is running | Close other apps or use a different port (9223-9225) |
-| Connection refused | Firewall blocking localhost | Check firewall settings for port 9222 |
-| `app.commandLine.appendSwitch` not working | Called after `app.whenReady()` | Move the call to the top of main.js, before any async code |
-
-### 🤖 For AI Assistants
-
-When configuring an Electron app for MCP Server:
-
-1. **Check if already configured**: Look for `--remote-debugging-port` in `package.json` scripts or `app.commandLine.appendSwitch` in the main process file
-2. **Preferred method**: Modify `package.json` to add a `dev` or `debug` script with `--remote-debugging-port=9222`
-3. **Always verify**: After starting the app, use `get_electron_window_info` or `list_electron_windows` to confirm connection
-4. **Port range**: The MCP server scans ports 9222-9225, so any of these ports will work
-
-## 🎯 Proper MCP Usage Guide
-
-### ⚠️ Critical: Argument Structure
-
-**The most common mistake** when using this MCP server is incorrect argument structure for the `send_command_to_electron` tool.
-
-#### ❌ Wrong (causes "selector is empty" errors):
-
-```javascript
-{
-  "command": "click_by_selector",
-  "args": "button.submit-btn"  // ❌ Raw string - WRONG!
-}
-```
-
-#### ✅ Correct:
-
-```javascript
-{
-  "command": "click_by_selector",
-  "args": {
-    "selector": "button.submit-btn"  // ✅ Object with selector property
-  }
-}
-```
-
-### 📋 Command Argument Reference
-
-| Command                                 | Required Args                                                                       | Example                                          |
-| --------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `click_by_selector`                     | `{"selector": "css-selector"}`                                                      | `{"selector": "button.primary"}`                 |
-| `click_by_text`                         | `{"text": "button text"}`                                                           | `{"text": "Submit"}`                             |
-| `hover`                                 | `{"selector": "css-selector"}`                                                      | `{"selector": "#menu-item"}`                     |
-| `drag`                                  | `{"startSelector": "source", "endSelector": "target"}`                              | `{"startSelector": "#item", "endSelector": "#zone"}` |
-| `wait`                                  | `{"duration": 1000}` or `{"selector": "..."}` or `{"text": "..."}`                  | `{"selector": "#loaded-content"}`                |
-| `type`                                  | `{"selector": "...", "text": "..."}`                                                | `{"selector": "#search", "text": "hello"}`       |
-| `fill_input`                            | `{"value": "text", "selector": "..."}` or `{"value": "text", "placeholder": "..."}` | `{"placeholder": "Enter name", "value": "John"}` |
-| `get_attribute`                         | `{"selector": "...", "attribute": "..."}`                                           | `{"selector": "img", "attribute": "src"}`        |
-| `is_visible`                            | `{"selector": "..."}`                                                               | `{"selector": "#error-message"}`                 |
-| `count`                                 | `{"selector": "..."}`                                                               | `{"selector": ".list-item"}`                     |
-| `send_keyboard_shortcut`                | `{"text": "key combination"}`                                                       | `{"text": "Ctrl+N"}`                             |
-| `eval`                                  | `{"code": "javascript"}`                                                            | `{"code": "document.title"}`                     |
-| `get_title`, `get_url`, `get_body_text` | No args needed                                                                      | `{}` or omit args                                |
-
-### 🔄 Recommended Workflow
-
-1. **Inspect**: Start with `get_page_structure` or `debug_elements`
-2. **Target**: Use specific selectors or text-based targeting
-3. **Interact**: Use the appropriate command with correct argument structure
-4. **Verify**: Take screenshots or check page state
-
-```javascript
-// Step 1: Understand the page
-{
-  "command": "get_page_structure"
-}
-
-// Step 2: Click button using text (most reliable)
-{
-  "command": "click_by_text",
-  "args": {
-    "text": "Create New Encyclopedia"
-  }
-}
-
-// Step 3: Fill form field
-{
-  "command": "fill_input",
-  "args": {
-    "placeholder": "Enter encyclopedia name",
-    "value": "AI and Machine Learning"
-  }
-}
-
-// Step 4: Submit with selector
-{
-  "command": "click_by_selector",
-  "args": {
-    "selector": "button[type='submit']"
-  }
-}
-```
-
-### 🐛 Troubleshooting Common Issues
-
-| Error                            | Cause                            | Solution                       |
-| -------------------------------- | -------------------------------- | ------------------------------ |
-| "The provided selector is empty" | Passing string instead of object | Use `{"selector": "..."}`      |
-| "Element not found"              | Wrong selector                   | Use `get_page_structure` first |
-| "Click prevented - too soon"     | Rapid consecutive clicks         | Wait before retrying           |
-
-
-
-
-
-
-## 🔧 Available Tools
-
-### `launch_electron_app`
-
-Launch an Electron application with debugging capabilities.
-
-```javascript
-{
-  "appPath": "/path/to/electron-app",
-  "devMode": true,  // Enables Chrome DevTools Protocol on port 9222
-  "args": ["--enable-logging", "--dev"]
-}
-```
-
-**Returns**: Process ID and launch confirmation
-
-### `get_electron_window_info`
-
-Get comprehensive window and target information via Chrome DevTools Protocol.
-
-```javascript
-{
-  "includeChildren": true  // Include child windows and DevTools instances
-}
-```
-
-**Returns**:
-
-- Window IDs, titles, URLs, and types
-- DevTools Protocol target information
-- Platform details and process information
-
-### `take_screenshot`
-
-Capture high-quality screenshots using Playwright and Chrome DevTools Protocol.
-
-```javascript
-{
-  "outputPath": "/path/to/screenshot.png",  // Optional: defaults to temp directory
-  "windowTitle": "My App"  // Optional: target specific window
-}
-```
-
-**Features**:
-
-- Non-intrusive capture (doesn't bring window to front)
-- Works with any Electron app
-- Fallback to platform-specific tools if needed
-
-### `send_command_to_electron`
-
-Execute JavaScript commands in the running Electron application via WebSocket.
-
-```javascript
-{
-  "command": "eval",  // Built-in commands: eval, get_title, get_url, click_button, console_log
-  "args": {
-    "code": "document.querySelector('button').click(); 'Button clicked!'"
-  }
-}
-```
-
-**Enhanced UI Interaction Commands**:
-
-- `find_elements`: Analyze all interactive UI elements with their properties and positions
-- `click_by_text`: Click elements by their visible text, aria-label, or title (more reliable than selectors)
-- `fill_input`: Fill input fields by selector, placeholder text, or associated label text
-- `select_option`: Select dropdown options by value or visible text
-- `hover`: Hover over elements (simulates mouseenter/mouseover)
-- `drag`: Drag elements from one location to another (supports dataTransfer)
-- `wait`: Wait for duration, element selector, or text presence
-- `type`: Type text character-by-character into inputs
-- `get_attribute`: Get value of any element attribute
-- `is_visible`: Check if element exists and is visible in viewport
-- `count`: Count elements matching a selector (total and visible)
-- `get_page_structure`: Get organized overview of all page elements (buttons, inputs, selects, links)
-- `get_title`: Get document title
-- `get_url`: Get current URL
-- `get_body_text`: Extract visible text content
-- `click_button`: Click buttons by CSS selector (basic method)
-- `console_log`: Send console messages
-- `eval`: Execute custom JavaScript code
-
-**Recommended workflow**: Use `get_page_structure` first to understand available elements, then use specific interaction commands like `click_by_text` or `fill_input`.
-
-### `read_electron_logs`
-
-Stream application logs from main process, renderer, and console.
-
-```javascript
-{
-  "logType": "all",  // Options: "all", "main", "renderer", "console"
-  "lines": 50,       // Number of recent lines
-  "follow": false    // Stream live logs
-}
-```
-
-### `close_electron_app`
-
-Gracefully close the Electron application.
-
-```javascript
-{
-  "force": false  // Force kill if unresponsive
-}
-```
-
-### `build_electron_app`
-
-Build Electron applications for distribution.
-
-```javascript
-{
-  "projectPath": "/path/to/project",
-  "platform": "darwin",  // win32, darwin, linux
-  "arch": "x64",         // x64, arm64, ia32
-  "debug": false
-}
-```
-
-## 🎮 Demo Application
-
-Try the interactive demo app to test all MCP Server features:
-
+### Demo App
+Try the included demo to verify functionality:
 ```bash
 cd examples/demo-app
 npm install
 npm run dev
 ```
 
-The demo app includes:
-- **Interactive UI Elements**: Buttons, forms, dropdowns, checkboxes
-- **Real-time Event Logging**: Monitor all interactions
-- **MCP Command Examples**: Built-in usage guide
-- **DevTools Integration**: Automatically enabled on port 9222
+---
 
-See [examples/demo-app/README.md](examples/demo-app/README.md) for detailed instructions.
+## ❓ Troubleshooting
 
-## 💡 Usage Examples
+**"Target not found" / "No running Electron application"**
+- Ensure the app was started with `--remote-debugging-port=9222`.
+- Check if `http://localhost:9222/json` loads in your browser.
+- Try ports 9223-9225 if you have multiple instances.
 
-### Smart UI Interaction Workflow
+**"Selector is empty" error**
+- **Wrong:** `{"command": "click_by_selector", "args": ".btn"}`
+- **Correct:** `{"command": "click_by_selector", "args": {"selector": ".btn"}}` (Always use named properties!)
 
-```javascript
-// 1. First, understand the page structure
-await send_command_to_electron({
-  command: 'get_page_structure',
-});
-
-// 2. Click a button by its text (much more reliable than selectors)
-await send_command_to_electron({
-  command: 'click_by_text',
-  args: {
-    text: 'Login', // Finds buttons containing "Login" in text, aria-label, or title
-  },
-});
-
-// 3. Fill inputs by their label or placeholder text
-await send_command_to_electron({
-  command: 'fill_input',
-  args: {
-    text: 'username', // Finds input with label "Username" or placeholder "Enter username"
-    value: 'john.doe@example.com',
-  },
-});
-
-await send_command_to_electron({
-  command: 'fill_input',
-  args: {
-    text: 'password',
-    value: 'secretpassword',
-  },
-});
-
-// 4. Select dropdown options by visible text
-await send_command_to_electron({
-  command: 'select_option',
-  args: {
-    text: 'country', // Finds select with label containing "country"
-    value: 'United States', // Selects option with this text
-  },
-});
-
-// 5. Take a screenshot to verify the result
-await take_screenshot();
-```
-
-### Advanced Element Detection
-
-```javascript
-// Find all interactive elements with detailed information
-await send_command_to_electron({
-  command: 'find_elements',
-});
-
-// This returns detailed info about every clickable element and input:
-// {
-//   "type": "clickable",
-//   "text": "Submit Form",
-//   "id": "submit-btn",
-//   "className": "btn btn-primary",
-//   "ariaLabel": "Submit the registration form",
-//   "position": { "x": 100, "y": 200, "width": 120, "height": 40 },
-//   "visible": true
-// }
-```
-
-### Automated UI Testing
-
-```javascript
-// Launch app in development mode
-await launch_electron_app({
-  appPath: '/path/to/app',
-  devMode: true,
-});
-
-// Take a screenshot
-await take_screenshot();
-
-// Click a button programmatically
-await send_command_to_electron({
-  command: 'eval',
-  args: {
-    code: "document.querySelector('#submit-btn').click()",
-  },
-});
-
-// Verify the result
-await send_command_to_electron({
-  command: 'get_title',
-});
-```
-
-### Development Debugging
-
-```javascript
-// Get window information
-const windowInfo = await get_electron_window_info();
-
-// Extract application data
-await send_command_to_electron({
-  command: 'eval',
-  args: {
-    code: 'JSON.stringify(window.appState, null, 2)',
-  },
-});
-
-// Monitor logs
-await read_electron_logs({
-  logType: 'all',
-  lines: 100,
-});
-```
-
-### Performance Monitoring
-
-```javascript
-// Get system information
-await send_command_to_electron({
-  command: 'eval',
-  args: {
-    code: '({memory: performance.memory, timing: performance.timing})',
-  },
-});
-
-// Take periodic screenshots for visual regression testing
-await take_screenshot({
-  outputPath: '/tests/screenshots/current.png',
-});
-```
-
-## 🏗️ Architecture
-
-### Chrome DevTools Protocol Integration
-
-- **Universal Compatibility**: Works with any Electron app that has remote debugging enabled
-- **Real-time Communication**: WebSocket-based command execution with the renderer process
-- **No App Modifications**: Zero changes required to target applications
-
-### Process Management
-
-- **Clean Environment**: Handles `ELECTRON_RUN_AS_NODE` and other environment variables
-- **Resource Tracking**: Monitors PIDs, memory usage, and application lifecycle
-- **Graceful Shutdown**: Proper cleanup and process termination
-
-### Cross-Platform Support
-
-- **macOS**: Uses Playwright CDP with screencapture fallback
-- **Windows**: PowerShell-based window detection and capture
-- **Linux**: X11 window management (planned)
-
-## 🧪 Development
-
-### Prerequisites
-
-- Node.js 18+
-- TypeScript 4.5+
-- **Electron** - Required for running and testing Electron applications
-
-  ```bash
-  # Install Electron globally (recommended)
-  npm install -g electron
-
-  # Or install locally in your project
-  npm install electron --save-dev
-  ```
-
-### Target Application Setup
-
-For the MCP server to work with your Electron application, you need to enable remote debugging. Add this code to your Electron app's main process:
-
-```javascript
-const { app } = require('electron');
-const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
-
-// Enable remote debugging in development mode
-if (isDev) {
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
-}
-```
-
-**Alternative approaches:**
-
-```bash
-# Launch your app with debugging enabled
-electron . --remote-debugging-port=9222
-
-# Or via npm script
-npm run dev -- --remote-debugging-port=9222
-```
-
-**Note:** The MCP server automatically scans ports 9222-9225 to detect running Electron applications with remote debugging enabled.
-
-### Setup
-
-```bash
-git clone https://github.com/TheDarkSkyXD/debug-electron-mcp.git
-cd debug-electron-mcp
-
-npm install
-npm run build
-
-# Run tests
-npm test
-
-# Development mode with auto-rebuild
-npm run dev
-```
-
-### Testing
-
-The project includes comprehensive test files for React compatibility:
-
-```bash
-# Run React compatibility tests
-cd tests/integration/react-compatibility
-electron test-react-electron.js
-```
-
-See [`tests/integration/react-compatibility/README.md`](tests/integration/react-compatibility/README.md) for detailed testing instructions and scenarios.
-
-### React Compatibility
-
-This MCP server has been thoroughly tested with React applications and handles common React patterns correctly:
-
-- **✅ React Event Handling**: Properly handles `preventDefault()` in click handlers
-- **✅ Form Input Detection**: Advanced scoring algorithm works with React-rendered inputs
-- **✅ Component Interaction**: Compatible with React components, hooks, and state management
-
-### Project Structure
-
-```
-src/
-├── handlers.ts      # MCP tool handlers
-├── index.ts         # Server entry point
-├── tools.ts         # Tool definitions
-├── screenshot.ts    # Screenshot functionality
-├── utils/
-│   ├── process.ts   # Process management & DevTools Protocol
-│   ├── logs.ts      # Log management
-│   └── project.ts   # Project scaffolding
-└── schemas/         # JSON schemas for validation
-```
-
-## 🔐 Security & Best Practices
-
-- **Sandboxed Execution**: All JavaScript execution is contained within the target Electron app
-- **Path Validation**: Only operates on explicitly provided application paths
-- **Process Isolation**: Each launched app runs in its own process space
-- **No Persistent Access**: No permanent modifications to target applications
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-**Before reporting issues**: Please use the standardized [`ISSUE_TEMPLATE.md`](ISSUE_TEMPLATE.md) for proper bug reporting format. For React compatibility problems or similar technical issues, also review [`REACT_COMPATIBILITY_ISSUES.md`](REACT_COMPATIBILITY_ISSUES.md) for detailed debugging examples, including proper command examples, error outputs, and reproduction steps.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/awesome-feature`)
-3. Commit your changes (`git commit -m 'Add awesome feature'`)
-4. Push to the branch (`git push origin feature/awesome-feature`)
-5. Open a Pull Request
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
-## 🙌 Credits & Attribution
-
-**Original Author**: [Halil Ural](https://github.com/halilural)
-
-This project is a fork of [halilural/electron-mcp-server](https://github.com/halilural/electron-mcp-server) with enhancements for **Cursor IDE compatibility** and improved stability.
-
-### Forked & Maintained By
-
-- [Antigravity](https://github.com/TheDarkSkyXD) - Cursor IDE integration improvements, bug fixes, and ongoing maintenance
-
-### Key Improvements in This Fork
-
-- ✅ **Cursor IDE Compatibility**: Full integration with Cursor IDE for seamless AI-powered Electron automation
-- ✅ **Enhanced Stability**: Improved error handling and reliability
-- ✅ **Better Documentation**: Added comprehensive guides for local development and troubleshooting
-- ✅ **Scoped Package**: Published as `@debugelectron/electron-mcp-server` on npm
-
-### Contributing to This Fork
-
-We welcome contributions! If you have improvements or bug fixes, please feel free to:
-1. Fork this repository
-2. Create a feature branch
-3. Submit a pull request with your improvements
-
----
-
-## ☕ Support
-
-If this project helped you, consider buying me a coffee! ☕
-
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/)
-
-Your support helps me maintain and improve this project. Thank you! 🙏
-
-## 🙏 Acknowledgments
-
-- **[Model Context Protocol](https://modelcontextprotocol.io)** - Standardized AI-application interface
-- **[Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)** - Universal debugging interface
-- **[Playwright](https://playwright.dev)** - Reliable browser automation
-- **[Electron](https://electronjs.org)** - Cross-platform desktop applications
-
-## 🔗 Links
-
-- **[GitHub Repository](https://github.com/TheDarkSkyXD/electron-mcp-server)**
-- **[NPM Package](https://www.npmjs.com/package/@debugelectron/electron-mcp-server)**
-- **[Original Repository](https://github.com/halilural/electron-mcp-server)** - Original project by Halil Ural
-- **[Model Context Protocol](https://modelcontextprotocol.io)**
-- **[Chrome DevTools Protocol Docs](https://chromedevtools.github.io/devtools-protocol/)**
-- **[Cursor IDE Setup Guide](./CURSOR_SETUP.md)** - Complete setup guide for Cursor IDE integration
-- **[Issue Template](./ISSUE_TEMPLATE.md)** - Standardized bug reporting format
-- **[React Compatibility Issues Documentation](./REACT_COMPATIBILITY_ISSUES.md)** - Technical debugging guide for React applications
-
----
-
-**Ready to supercharge your Electron development with AI-powered automation?** Install the MCP server and start building smarter workflows today! 🚀
+### Credits
+Forked and maintained by [Antigravity](https://github.com/TheDarkSkyXD), originally based on work by [Halil Ural](https://github.com/halilural).
