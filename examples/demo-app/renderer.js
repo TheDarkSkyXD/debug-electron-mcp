@@ -203,6 +203,79 @@ function setupEventLog() {
   }
 }
 
+// Drag and Drop
+function setupDragAndDrop() {
+  const draggableItems = document.querySelectorAll('.draggable-item');
+  const dropZones = document.querySelectorAll('.drop-zone');
+  const resultDiv = document.getElementById('drag-result');
+
+  let draggedItem = null;
+
+  // Draggable items handlers
+  draggableItems.forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      item.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', item.id);
+      e.dataTransfer.effectAllowed = 'move';
+      logEvent(`Started dragging: ${item.textContent.trim()}`, 'info');
+    });
+
+    item.addEventListener('dragend', (e) => {
+      item.classList.remove('dragging');
+      draggedItem = null;
+      logEvent(`Ended dragging: ${item.textContent.trim()}`, 'info');
+    });
+  });
+
+  // Drop zones handlers
+  dropZones.forEach(zone => {
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      zone.classList.add('drag-over');
+    });
+
+    zone.addEventListener('dragleave', (e) => {
+      zone.classList.remove('drag-over');
+    });
+
+    zone.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      zone.classList.add('drag-over');
+      logEvent(`Dragging over: ${zone.id}`, 'info');
+    });
+
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+
+      const itemId = e.dataTransfer.getData('text/plain');
+      const draggedElement = document.getElementById(itemId) || draggedItem;
+
+      if (draggedElement) {
+        const itemText = draggedElement.textContent.trim();
+        const zoneId = zone.id;
+
+        // Create a dropped item indicator in the zone
+        const droppedIndicator = document.createElement('span');
+        droppedIndicator.className = 'dropped-item';
+        droppedIndicator.textContent = itemText;
+        zone.appendChild(droppedIndicator);
+
+        if (resultDiv) {
+          resultDiv.innerHTML = `<strong>✅ Dropped!</strong><br>${itemText} dropped in ${zoneId}`;
+          resultDiv.className = 'result-box success';
+        }
+
+        logEvent(`Dropped ${itemText} in ${zoneId}`, 'success');
+      }
+    });
+  });
+
+  logEvent('🎯 Drag and drop handlers registered', 'info');
+}
+
 // Initialize everything when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   logEvent('✨ MCP Demo App initialized', 'success');
@@ -211,6 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFormHandling();
   setupSelectionHandling();
   setupCounter();
+  setupDragAndDrop();
   setupEventLog();
 
   logEvent('🎯 All event listeners registered', 'success');

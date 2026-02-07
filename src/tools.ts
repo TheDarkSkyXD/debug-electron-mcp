@@ -59,6 +59,15 @@ Enhanced UI interaction commands:
 - 'get_title', 'get_url', 'get_body_text': Basic page information
 - 'eval': Execute custom JavaScript code with enhanced error reporting
 
+Additional interaction commands:
+- 'hover': Hover over an element by selector (triggers mouseenter/mouseover events)
+- 'drag': Drag from one element to another {"startSelector": "...", "endSelector": "..."}
+- 'wait': Wait for element, text, or duration {"selector": "..."} or {"text": "..."} or {"duration": 1000}
+- 'type': Type text character by character {"text": "...", "selector": "..."} (triggers key events)
+- 'get_attribute': Get element attribute value {"selector": "...", "attribute": "href"}
+- 'is_visible': Check if element is visible {"selector": "..."} returns visibility info
+- 'count': Count elements matching selector {"selector": "..."} returns total and visible count
+
 IMPORTANT: Arguments must be passed as an object with the correct properties:
 
 Examples:
@@ -67,6 +76,13 @@ Examples:
 - fill_input: {"placeholder": "Enter name", "value": "John Doe"}
 - fill_input: {"selector": "#email", "value": "user@example.com"}
 - send_keyboard_shortcut: {"text": "Enter"}
+- hover: {"selector": ".dropdown-trigger"}
+- drag: {"startSelector": ".draggable", "endSelector": ".drop-zone"}
+- wait: {"selector": ".loading-spinner", "timeout": 5000}
+- type: {"text": "Hello World", "selector": "#input-field"}
+- get_attribute: {"selector": "a.link", "attribute": "href"}
+- is_visible: {"selector": ".modal"}
+- count: {"selector": "li.item"}
 - eval: {"code": "document.title"}
 
 Use 'get_page_structure' or 'debug_elements' first to understand available elements, then use specific interaction commands.
