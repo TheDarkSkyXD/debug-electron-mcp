@@ -217,6 +217,65 @@
         </button>
       </section>
 
+      <!-- Drag and Drop Section -->
+      <section class="card">
+        <h2>🎯 Drag and Drop</h2>
+        <p class="description">
+          Test drag interactions with <code>drag</code> command
+        </p>
+        <div class="drag-drop-container">
+          <div class="drag-source-area">
+            <h4>Drag Items</h4>
+            <div class="draggable-items">
+              <div
+                id="drag-item-1"
+                class="draggable-item"
+                draggable="true"
+                data-testid="drag-item-1"
+              >
+                📦 Item 1
+              </div>
+              <div
+                id="drag-item-2"
+                class="draggable-item"
+                draggable="true"
+                data-testid="drag-item-2"
+              >
+                📦 Item 2
+              </div>
+              <div
+                id="drag-item-3"
+                class="draggable-item"
+                draggable="true"
+                data-testid="drag-item-3"
+              >
+                📦 Item 3
+              </div>
+            </div>
+          </div>
+          <div class="drop-zones-area">
+            <h4>Drop Zones</h4>
+            <div class="drop-zones">
+              <div
+                id="drop-zone-a"
+                class="drop-zone"
+                data-testid="drop-zone-a"
+              >
+                Zone A
+              </div>
+              <div
+                id="drop-zone-b"
+                class="drop-zone"
+                data-testid="drop-zone-b"
+              >
+                Zone B
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="drag-result" class="result-box"></div>
+      </section>
+
       <!-- Event Log Section -->
       <section class="card">
         <h2>📋 Event Log</h2>

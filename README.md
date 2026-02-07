@@ -316,7 +316,14 @@ When configuring an Electron app for MCP Server:
 | --------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------ |
 | `click_by_selector`                     | `{"selector": "css-selector"}`                                                      | `{"selector": "button.primary"}`                 |
 | `click_by_text`                         | `{"text": "button text"}`                                                           | `{"text": "Submit"}`                             |
+| `hover`                                 | `{"selector": "css-selector"}`                                                      | `{"selector": "#menu-item"}`                     |
+| `drag`                                  | `{"startSelector": "source", "endSelector": "target"}`                              | `{"startSelector": "#item", "endSelector": "#zone"}` |
+| `wait`                                  | `{"duration": 1000}` or `{"selector": "..."}` or `{"text": "..."}`                  | `{"selector": "#loaded-content"}`                |
+| `type`                                  | `{"selector": "...", "text": "..."}`                                                | `{"selector": "#search", "text": "hello"}`       |
 | `fill_input`                            | `{"value": "text", "selector": "..."}` or `{"value": "text", "placeholder": "..."}` | `{"placeholder": "Enter name", "value": "John"}` |
+| `get_attribute`                         | `{"selector": "...", "attribute": "..."}`                                           | `{"selector": "img", "attribute": "src"}`        |
+| `is_visible`                            | `{"selector": "..."}`                                                               | `{"selector": "#error-message"}`                 |
+| `count`                                 | `{"selector": "..."}`                                                               | `{"selector": ".list-item"}`                     |
 | `send_keyboard_shortcut`                | `{"text": "key combination"}`                                                       | `{"text": "Ctrl+N"}`                             |
 | `eval`                                  | `{"code": "javascript"}`                                                            | `{"code": "document.title"}`                     |
 | `get_title`, `get_url`, `get_body_text` | No args needed                                                                      | `{}` or omit args                                |
@@ -441,6 +448,13 @@ Execute JavaScript commands in the running Electron application via WebSocket.
 - `click_by_text`: Click elements by their visible text, aria-label, or title (more reliable than selectors)
 - `fill_input`: Fill input fields by selector, placeholder text, or associated label text
 - `select_option`: Select dropdown options by value or visible text
+- `hover`: Hover over elements (simulates mouseenter/mouseover)
+- `drag`: Drag elements from one location to another (supports dataTransfer)
+- `wait`: Wait for duration, element selector, or text presence
+- `type`: Type text character-by-character into inputs
+- `get_attribute`: Get value of any element attribute
+- `is_visible`: Check if element exists and is visible in viewport
+- `count`: Count elements matching a selector (total and visible)
 - `get_page_structure`: Get organized overview of all page elements (buttons, inputs, selects, links)
 - `get_title`: Get document title
 - `get_url`: Get current URL

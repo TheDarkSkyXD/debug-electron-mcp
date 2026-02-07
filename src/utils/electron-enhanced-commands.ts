@@ -13,6 +13,13 @@ export interface CommandArgs {
   placeholder?: string;
   message?: string;
   code?: string;
+  // New properties for additional tools
+  duration?: number;          // For wait command (milliseconds)
+  timeout?: number;           // For wait command timeout
+  startSelector?: string;     // For drag command - source element
+  endSelector?: string;       // For drag command - target element
+  attribute?: string;         // For get_attribute command
+  slowly?: boolean;           // For type command - type character by character
 }
 
 /**
@@ -373,10 +380,400 @@ export async function sendCommandToElectron(
         `;
         break;
 
+      case 'hover':
+        // Hover over an element
+        const hoverSelector = args?.selector || '';
+        if (!hoverSelector) {
+          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
+        }
+        if (hoverSelector.includes('javascript:') || hoverSelector.includes('<script')) {
+          return 'Invalid selector: contains dangerous content';
+        }
+        const escapedHoverSelector = JSON.stringify(hoverSelector);
+
+        javascriptCode = `
+          (function() {
+            try {
+              const element = document.querySelector(${escapedHoverSelector});
+              if (!element) {
+                return 'Element not found: ' + ${escapedHoverSelector};
+              }
+              
+              const rect = element.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) {
+                return 'Element not visible';
+              }
+              
+              const mouseenterEvent = new MouseEvent('mouseenter', {
+                bubbles: false,
+                cancelable: true,
+                view: window,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2
+              });
+              
+              const mouseoverEvent = new MouseEvent('mouseover', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2
+              });
+              
+              element.dispatchEvent(mouseenterEvent);
+              element.dispatchEvent(mouseoverEvent);
+              
+              return 'Hovered over element: ' + element.tagName + 
+                     (element.textContent ? ' - "' + element.textContent.substring(0, 50).trim() + '"' : '');
+            } catch (e) {
+              return 'Error hovering: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
+      case 'drag':
+        // Drag from one element to another
+        const startSel = args?.startSelector || args?.selector || '';
+        const endSel = args?.endSelector || '';
+
+        if (!startSel || !endSel) {
+          return 'ERROR: Missing selectors. Use: {"startSelector": "source-element", "endSelector": "target-element"}';
+        }
+        if (startSel.includes('javascript:') || endSel.includes('javascript:')) {
+          return 'Invalid selector: contains dangerous content';
+        }
+
+        const escapedStartSel = JSON.stringify(startSel);
+        const escapedEndSel = JSON.stringify(endSel);
+
+        javascriptCode = `
+          (function() {
+            try {
+              const startElement = document.querySelector(${escapedStartSel});
+              const endElement = document.querySelector(${escapedEndSel});
+              
+              if (!startElement) return 'Start element not found: ' + ${escapedStartSel};
+              if (!endElement) return 'End element not found: ' + ${escapedEndSel};
+              
+              const startRect = startElement.getBoundingClientRect();
+              const endRect = endElement.getBoundingClientRect();
+              
+              const startX = startRect.left + startRect.width / 2;
+              const startY = startRect.top + startRect.height / 2;
+              const endX = endRect.left + endRect.width / 2;
+              const endY = endRect.top + endRect.height / 2;
+              
+              const dataTransfer = new DataTransfer();
+              dataTransfer.setData('text/plain', startElement.id || '');
+              dataTransfer.effectAllowed = 'copyMove';
+              dataTransfer.dropEffect = 'move';
+              
+              const dragStartEvent = new DragEvent('dragstart', {
+                bubbles: true, cancelable: true, clientX: startX, clientY: startY, dataTransfer: dataTransfer
+              });
+              const dragEvent = new DragEvent('drag', {
+                bubbles: true, cancelable: true, clientX: endX, clientY: endY, dataTransfer: dataTransfer
+              });
+              const dragEnterEvent = new DragEvent('dragenter', {
+                bubbles: true, cancelable: true, clientX: endX, clientY: endY, dataTransfer: dataTransfer
+              });
+              const dragOverEvent = new DragEvent('dragover', {
+                bubbles: true, cancelable: true, clientX: endX, clientY: endY, dataTransfer: dataTransfer
+              });
+              const dropEvent = new DragEvent('drop', {
+                bubbles: true, cancelable: true, clientX: endX, clientY: endY, dataTransfer: dataTransfer
+              });
+              const dragEndEvent = new DragEvent('dragend', {
+                bubbles: true, cancelable: true, clientX: endX, clientY: endY, dataTransfer: dataTransfer
+              });
+              
+              startElement.dispatchEvent(dragStartEvent);
+              startElement.dispatchEvent(dragEvent);
+              endElement.dispatchEvent(dragEnterEvent);
+              endElement.dispatchEvent(dragOverEvent);
+              endElement.dispatchEvent(dropEvent);
+              startElement.dispatchEvent(dragEndEvent);
+              
+              return 'Dragged from ' + startElement.tagName + ' to ' + endElement.tagName;
+            } catch (e) {
+              return 'Error performing drag: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
+      case 'wait':
+        // Wait for element, text, or specified time
+        const waitSelector = args?.selector || '';
+        const waitText = args?.text || '';
+        const waitDuration = args?.duration || 0;
+        const waitTimeout = args?.timeout || 5000;
+
+        if (!waitSelector && !waitText && !waitDuration) {
+          return 'ERROR: Specify selector, text, or duration. Use: {"selector": "..."} or {"text": "..."} or {"duration": 1000}';
+        }
+
+        if (waitDuration > 0) {
+          javascriptCode = `
+            (function() {
+              return new Promise(resolve => {
+                setTimeout(() => resolve('Waited ${waitDuration}ms'), ${waitDuration});
+              });
+            })();
+          `;
+        } else if (waitSelector) {
+          const escapedWaitSelector = JSON.stringify(waitSelector);
+          javascriptCode = `
+            (function() {
+              return new Promise((resolve) => {
+                const startTime = Date.now();
+                const timeout = ${waitTimeout};
+                
+                function check() {
+                  const element = document.querySelector(${escapedWaitSelector});
+                  if (element && element.getBoundingClientRect().width > 0) {
+                    resolve('Element found: ' + ${escapedWaitSelector} + ' (after ' + (Date.now() - startTime) + 'ms)');
+                    return;
+                  }
+                  if (Date.now() - startTime > timeout) {
+                    resolve('Timeout waiting for element: ' + ${escapedWaitSelector});
+                    return;
+                  }
+                  setTimeout(check, 100);
+                }
+                check();
+              });
+            })();
+          `;
+        } else if (waitText) {
+          const escapedWaitText = JSON.stringify(waitText);
+          javascriptCode = `
+            (function() {
+              return new Promise((resolve) => {
+                const startTime = Date.now();
+                const timeout = ${waitTimeout};
+                
+                function check() {
+                  if (document.body.innerText.includes(${escapedWaitText})) {
+                    resolve('Text found: ' + ${escapedWaitText} + ' (after ' + (Date.now() - startTime) + 'ms)');
+                    return;
+                  }
+                  if (Date.now() - startTime > timeout) {
+                    resolve('Timeout waiting for text: ' + ${escapedWaitText});
+                    return;
+                  }
+                  setTimeout(check, 100);
+                }
+                check();
+              });
+            })();
+          `;
+        } else {
+          javascriptCode = `'Invalid wait parameters'`;
+        }
+        break;
+
+      case 'type':
+        // Type text character by character (different from fill which sets value directly)
+        const typeText = args?.text || '';
+        const typeSelector = args?.selector || '';
+        const typeSlowly = args?.slowly !== false; // Default to true for realistic typing
+
+        if (!typeText) {
+          return 'ERROR: Missing text. Use: {"text": "text to type"} or {"text": "...", "selector": "input-selector"}';
+        }
+
+        const escapedTypeText = JSON.stringify(typeText);
+        const escapedTypeSelector = typeSelector ? JSON.stringify(typeSelector) : 'null';
+
+        javascriptCode = `
+          (function() {
+            try {
+              let element;
+              if (${escapedTypeSelector}) {
+                element = document.querySelector(${escapedTypeSelector});
+                if (!element) return 'Element not found: ' + ${escapedTypeSelector};
+              } else {
+                element = document.activeElement;
+                if (!element || element === document.body) {
+                  return 'No element focused. Use {"selector": "..."} to specify an input';
+                }
+              }
+              
+              element.focus();
+              
+              const text = ${escapedTypeText};
+              const slowly = ${typeSlowly};
+              
+              if (slowly) {
+                return new Promise((resolve) => {
+                  let index = 0;
+                  
+                  function typeNext() {
+                    if (index >= text.length) {
+                      resolve('Typed: "' + text + '" into ' + element.tagName);
+                      return;
+                    }
+                    
+                    const char = text[index];
+                    
+                    element.dispatchEvent(new KeyboardEvent('keydown', {
+                      key: char,
+                      code: 'Key' + char.toUpperCase(),
+                      bubbles: true
+                    }));
+                    
+                    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+                      element.value += char;
+                      element.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    
+                    element.dispatchEvent(new KeyboardEvent('keyup', {
+                      key: char,
+                      code: 'Key' + char.toUpperCase(),
+                      bubbles: true
+                    }));
+                    
+                    index++;
+                    setTimeout(typeNext, 50);
+                  }
+                  
+                  typeNext();
+                });
+              } else {
+                if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+                  element.value += text;
+                  element.dispatchEvent(new Event('input', { bubbles: true }));
+                  element.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                return 'Typed: "' + text + '" into ' + element.tagName;
+              }
+            } catch (e) {
+              return 'Error typing: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
+      case 'get_attribute':
+        // Get an attribute value from an element
+        const attrSelector = args?.selector || '';
+        const attrName = args?.attribute || '';
+
+        if (!attrSelector || !attrName) {
+          return 'ERROR: Missing selector or attribute. Use: {"selector": "...", "attribute": "href"}';
+        }
+
+        const escapedAttrSelector = JSON.stringify(attrSelector);
+        const escapedAttrName = JSON.stringify(attrName);
+
+        javascriptCode = `
+          (function() {
+            try {
+              const element = document.querySelector(${escapedAttrSelector});
+              if (!element) {
+                return 'Element not found: ' + ${escapedAttrSelector};
+              }
+              
+              const value = element.getAttribute(${escapedAttrName});
+              if (value === null) {
+                return 'Attribute not found: ' + ${escapedAttrName} + ' on ' + element.tagName;
+              }
+              
+              return JSON.stringify({
+                selector: ${escapedAttrSelector},
+                attribute: ${escapedAttrName},
+                value: value
+              });
+            } catch (e) {
+              return 'Error getting attribute: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
+      case 'is_visible':
+        // Check if an element is visible
+        const visSelector = args?.selector || '';
+
+        if (!visSelector) {
+          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
+        }
+
+        const escapedVisSelector = JSON.stringify(visSelector);
+
+        javascriptCode = `
+          (function() {
+            try {
+              const element = document.querySelector(${escapedVisSelector});
+              if (!element) {
+                return JSON.stringify({ selector: ${escapedVisSelector}, exists: false, visible: false });
+              }
+              
+              const rect = element.getBoundingClientRect();
+              const style = window.getComputedStyle(element);
+              
+              const isVisible = rect.width > 0 &&
+                rect.height > 0 &&
+                style.visibility !== 'hidden' &&
+                style.display !== 'none' &&
+                style.opacity !== '0';
+              
+              const inViewport = rect.top < window.innerHeight &&
+                rect.bottom > 0 &&
+                rect.left < window.innerWidth &&
+                rect.right > 0;
+              
+              return JSON.stringify({
+                selector: ${escapedVisSelector},
+                exists: true,
+                visible: isVisible,
+                inViewport: inViewport,
+                dimensions: { width: rect.width, height: rect.height },
+                position: { top: rect.top, left: rect.left }
+              });
+            } catch (e) {
+              return 'Error checking visibility: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
+      case 'count':
+        // Count elements matching a selector
+        const countSelector = args?.selector || '';
+
+        if (!countSelector) {
+          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
+        }
+
+        const escapedCountSelector = JSON.stringify(countSelector);
+
+        javascriptCode = `
+          (function() {
+            try {
+              const elements = document.querySelectorAll(${escapedCountSelector});
+              const visibleCount = Array.from(elements).filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              }).length;
+              
+              return JSON.stringify({
+                selector: ${escapedCountSelector},
+                total: elements.length,
+                visible: visibleCount
+              });
+            } catch (e) {
+              return 'Error counting elements: ' + e.message;
+            }
+          })();
+        `;
+        break;
+
       case 'console_log':
-        javascriptCode = `console.log('MCP Command:', '${
-          args?.message || 'Hello from MCP!'
-        }'); 'Console message sent'`;
+        javascriptCode = `console.log('MCP Command:', '${args?.message || 'Hello from MCP!'
+          }'); 'Console message sent'`;
         break;
 
       case 'eval':
@@ -406,15 +803,14 @@ export async function sendCommandToElectron(
               }
               
               let result;
-              ${
-                rawCode.trim().startsWith('() =>') || rawCode.trim().startsWith('function')
-                  ? `result = (${rawCode})();`
-                  : rawCode.includes('return')
-                    ? `result = (function() { ${rawCode} })();`
-                    : rawCode.includes(';')
-                      ? `result = (function() { ${rawCode}; return "executed"; })();`
-                      : `result = (function() { return (${rawCode}); })();`
-              }
+              ${rawCode.trim().startsWith('() =>') || rawCode.trim().startsWith('function')
+            ? `result = (${rawCode})();`
+            : rawCode.includes('return')
+              ? `result = (function() { ${rawCode} })();`
+              : rawCode.includes(';')
+                ? `result = (function() { ${rawCode}; return "executed"; })();`
+                : `result = (function() { return (${rawCode}); })();`
+          }
               
               setTimeout(() => {
                 if (!isStateTest && window._mcpExecuting) {
@@ -459,13 +855,11 @@ export async function sendCommandToElectron(
         const parsedResult = JSON.parse(rawResult);
         if (parsedResult && typeof parsedResult === 'object' && 'success' in parsedResult) {
           if (!parsedResult.success) {
-            return `❌ Command failed: ${parsedResult.error}${
-              parsedResult.stack ? '\nStack: ' + parsedResult.stack : ''
-            }`;
+            return `❌ Command failed: ${parsedResult.error}${parsedResult.stack ? '\nStack: ' + parsedResult.stack : ''
+              }`;
           }
-          return `✅ Command successful${
-            parsedResult.result !== null ? ': ' + JSON.stringify(parsedResult.result) : ''
-          }`;
+          return `✅ Command successful${parsedResult.result !== null ? ': ' + JSON.stringify(parsedResult.result) : ''
+            }`;
         }
       } catch {
         // If it's not JSON, treat as regular result
@@ -474,9 +868,8 @@ export async function sendCommandToElectron(
 
     // Handle regular results
     if (rawResult === 'undefined' || rawResult === 'null' || rawResult === '') {
-      return `⚠️ Command executed but returned ${
-        rawResult || 'empty'
-      } - this may indicate the element wasn't found or the action failed`;
+      return `⚠️ Command executed but returned ${rawResult || 'empty'
+        } - this may indicate the element wasn't found or the action failed`;
     }
 
     return `✅ Result: ${rawResult}`;
