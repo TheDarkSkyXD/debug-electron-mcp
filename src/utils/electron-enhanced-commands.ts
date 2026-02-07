@@ -772,8 +772,9 @@ export async function sendCommandToElectron(
         break;
 
       case 'console_log':
-        javascriptCode = `console.log('MCP Command:', '${args?.message || 'Hello from MCP!'
-          }'); 'Console message sent'`;
+        javascriptCode = `console.log('MCP Command:', ${JSON.stringify(
+          args?.message ?? 'Hello from MCP!',
+        )}); 'Console message sent'`;
         break;
 
       case 'eval':
