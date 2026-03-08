@@ -23,6 +23,8 @@ export interface WindowTargetOptions {
   targetId?: string;
   /** Window title (case-insensitive partial match) */
   windowTitle?: string;
+  /** Specific ports to scan (overrides default port scanning) */
+  ports?: number[];
 }
 
 /**
@@ -37,7 +39,7 @@ export interface WindowTargetOptions {
 export async function findElectronTarget(options?: WindowTargetOptions): Promise<DevToolsTarget> {
   logger.debug('Looking for running Electron applications...');
 
-  const foundApps = await scanForElectronApps();
+  const foundApps = await scanForElectronApps(options?.ports);
 
   if (foundApps.length === 0) {
     throw new Error(

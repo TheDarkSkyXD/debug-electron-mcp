@@ -5,6 +5,9 @@ import {
   ReadElectronLogsSchema,
   GetElectronWindowInfoSchema,
   ListElectronWindowsSchema,
+  RegisterProjectSchema,
+  UnregisterProjectSchema,
+  ListProjectsSchema,
   ToolInput,
 } from './schemas';
 
@@ -15,6 +18,9 @@ export enum ToolName {
   READ_ELECTRON_LOGS = 'read_electron_logs',
   GET_ELECTRON_WINDOW_INFO = 'get_electron_window_info',
   LIST_ELECTRON_WINDOWS = 'list_electron_windows',
+  REGISTER_PROJECT = 'register_project',
+  UNREGISTER_PROJECT = 'unregister_project',
+  LIST_PROJECTS = 'list_projects',
 }
 
 // Helper function to convert Zod schemas to JSON Schema with proper typing
@@ -26,7 +32,7 @@ export const tools = [
   {
     name: ToolName.GET_ELECTRON_WINDOW_INFO,
     description:
-      'Get information about running Electron applications and their windows. Automatically detects any Electron app with remote debugging enabled (port 9222).',
+      'Get information about running Electron applications and their windows. Automatically detects any Electron app with remote debugging enabled (port 9222). Use projectName to scope to a specific project.',
     inputSchema: toJsonSchema(GetElectronWindowInfoSchema),
   },
   {
@@ -37,13 +43,14 @@ export const tools = [
 Multi-window support:
 - targetId: Specify a CDP target ID to screenshot a specific window (exact match, takes priority)
 - windowTitle: Specify a window title to target (case-insensitive partial match)
+- projectName: Scope to a registered project's port
 - If neither is specified, screenshots the first available main window (backward compatible)
 - Use 'list_electron_windows' to see available windows and their IDs`,
     inputSchema: toJsonSchema(TakeScreenshotSchema),
   },
   {
     name: ToolName.SEND_COMMAND_TO_ELECTRON,
-    description: `Send JavaScript commands to any running Electron application via Chrome DevTools Protocol. 
+    description: `Send JavaScript commands to any running Electron application via Chrome DevTools Protocol.
 
 Enhanced UI interaction commands:
 - 'find_elements': Analyze all interactive elements (buttons, inputs, selects) with their properties
@@ -90,6 +97,7 @@ Use 'get_page_structure' or 'debug_elements' first to understand available eleme
 Multi-window support:
 - targetId: Specify a CDP target ID to send commands to a specific window (exact match)
 - windowTitle: Specify a window title to target (case-insensitive partial match)
+- projectName: Scope to a registered project's port
 - If neither is specified, commands are sent to the first available main window (backward compatible)
 - Use 'list_electron_windows' to see available windows and their IDs`,
     inputSchema: toJsonSchema(SendCommandToElectronSchema),
@@ -97,13 +105,31 @@ Multi-window support:
   {
     name: ToolName.LIST_ELECTRON_WINDOWS,
     description:
-      "List all available Electron window targets across all detected applications. Returns window IDs, titles, URLs, and ports. Use the returned IDs with send_command_to_electron's targetId parameter to target specific windows.",
+      "List all available Electron window targets across all detected applications. Returns window IDs, titles, URLs, and ports. Use the returned IDs with send_command_to_electron's targetId parameter to target specific windows. Use projectName to scope to a specific project.",
     inputSchema: toJsonSchema(ListElectronWindowsSchema),
   },
   {
     name: ToolName.READ_ELECTRON_LOGS,
     description:
-      'Read console logs and output from running Electron applications. Useful for debugging and monitoring app behavior.',
+      'Read console logs and output from running Electron applications. Useful for debugging and monitoring app behavior. Use projectName to scope to a specific project.',
     inputSchema: toJsonSchema(ReadElectronLogsSchema),
+  },
+  {
+    name: ToolName.REGISTER_PROJECT,
+    description:
+      'Register a project name and auto-assign a debugging port. Returns the assigned port number. Start your Electron app with: electron . --remote-debugging-port=<assigned-port>. Projects are persisted to ~/.debug-electron-mcp.json.',
+    inputSchema: toJsonSchema(RegisterProjectSchema),
+  },
+  {
+    name: ToolName.UNREGISTER_PROJECT,
+    description:
+      'Unregister a project, freeing its assigned port for reuse by other projects.',
+    inputSchema: toJsonSchema(UnregisterProjectSchema),
+  },
+  {
+    name: ToolName.LIST_PROJECTS,
+    description:
+      'List all registered projects with their assigned ports, window title patterns, and connection status.',
+    inputSchema: toJsonSchema(ListProjectsSchema),
   },
 ];

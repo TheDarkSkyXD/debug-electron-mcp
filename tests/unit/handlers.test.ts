@@ -58,7 +58,7 @@ describe('Tool Handlers', () => {
 
             expect(result.isError).toBe(false);
             expect(result.content[0].text).toContain('Window Information');
-            expect(mockedGetWindowInfo).toHaveBeenCalledWith(true);
+            expect(mockedGetWindowInfo).toHaveBeenCalledWith(true, undefined);
         });
     });
 

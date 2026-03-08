@@ -1,6 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { findElectronTarget, connectForLogs } from './electron-connection';
+import { findElectronTarget, connectForLogs, WindowTargetOptions } from './electron-connection';
 import { logger } from './logger';
 
 export type LogType = 'console' | 'main' | 'renderer' | 'all';
@@ -14,17 +14,23 @@ export interface LogEntry {
 
 /**
  * Read logs from running Electron applications
+ * @param logType - Type of logs to read
+ * @param lines - Number of recent lines to read
+ * @param follow - Whether to follow/tail the logs
+ * @param ports - Optional list of specific ports to scan
  */
 export async function readElectronLogs(
   logType: LogType = 'all',
   lines: number = 100,
   follow: boolean = false,
+  ports?: number[],
 ): Promise<string> {
   try {
     logger.info('[MCP] Looking for running Electron applications for log access...');
 
     try {
-      const target = await findElectronTarget();
+      const windowOptions: WindowTargetOptions | undefined = ports ? { ports } : undefined;
+      const target = await findElectronTarget(windowOptions);
 
       // Connect via WebSocket to get console logs
       if (logType === 'console' || logType === 'all') {

@@ -12,6 +12,8 @@ export interface ScreenshotOptions {
   targetId?: string;
   /** Window title to screenshot (case-insensitive partial match) */
   windowTitle?: string;
+  /** Specific ports to scan (overrides default port scanning) */
+  ports?: number[];
 }
 
 /**
@@ -25,7 +27,7 @@ export async function takeScreenshot(
   data: string;
   error?: string;
 }> {
-  const { outputPath, targetId, windowTitle } = options;
+  const { outputPath, targetId, windowTitle, ports } = options;
 
   logger.info('📸 Taking screenshot of Electron application', {
     outputPath,
@@ -36,7 +38,7 @@ export async function takeScreenshot(
 
   try {
     // Find running Electron applications
-    const apps = await scanForElectronApps();
+    const apps = await scanForElectronApps(ports);
     if (apps.length === 0) {
       throw new Error('No running Electron applications found with remote debugging enabled');
     }
