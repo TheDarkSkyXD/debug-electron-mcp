@@ -1,6 +1,6 @@
 {
   "name": "@debugelectron/debug-electron-mcp",
-  "version": "1.6.10",
+  "version": "1.7.0",
   "description": "MCP server for Electron application automation and management. See MCP_USAGE_GUIDE.md for proper argument structure examples.",
   "main": "dist/index.js",
   "publishConfig": {
@@ -57,7 +57,6 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "electron": "^28.0.0",
-
     "playwright": "^1.54.1",
     "ws": "^8.18.3",
     "zod": "^3.22.4",
@@ -65,7 +64,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-
     "@types/node": "^20.19.10",
     "@types/webpack": "^5.28.5",
     "@types/webpack-node-externals": "^3.0.4",

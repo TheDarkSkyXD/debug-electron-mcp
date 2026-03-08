@@ -18,7 +18,7 @@ export function createMcpServer(defaultProject?: string): Server {
   const server = new Server(
     {
       name: '@debugelectron/debug-electron-mcp',
-      version: '1.6.10',
+      version: '1.7.0',
     },
     {
       capabilities: {
