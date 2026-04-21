@@ -13,6 +13,7 @@ function parseArgs(argv: string[]) {
   let project: string | undefined;
   let mode: 'stdio' | 'serve' = 'stdio';
   let httpPort = 3100;
+  let httpHost = '0.0.0.0';
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'serve') {
@@ -21,10 +22,12 @@ function parseArgs(argv: string[]) {
       project = args[++i];
     } else if (args[i] === '--port' && i + 1 < args.length) {
       httpPort = parseInt(args[++i], 10);
+    } else if (args[i] === '--host' && i + 1 < args.length) {
+      httpHost = args[++i];
     }
   }
 
-  return { project, mode, httpPort };
+  return { project, mode, httpPort, httpHost };
 }
 
 /**
@@ -74,11 +77,11 @@ function ensureProjectRegistered(name: string): { name: string; port: number; is
   return { name, port: config.port, isNew: true };
 }
 
-const { project, mode, httpPort } = parseArgs(process.argv);
+const { project, mode, httpPort, httpHost } = parseArgs(process.argv);
 
 if (mode === 'serve') {
   import('./serve').then(({ startHttpServer }) => {
-    startHttpServer(httpPort).catch((error) => {
+    startHttpServer(httpPort, httpHost).catch((error) => {
       logger.error('HTTP server error:', error);
       process.exit(1);
     });
