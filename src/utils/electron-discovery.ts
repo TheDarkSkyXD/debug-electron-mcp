@@ -40,21 +40,44 @@ export interface ElectronWindowResult {
  * Scan for running Electron applications with DevTools enabled
  * @param ports - Optional list of specific ports to scan. When provided, only these ports are checked.
  *                When omitted, scans the default hardcoded port ranges.
+ * @param host - Optional host to connect to. Defaults to 'localhost'.
  */
-export async function scanForElectronApps(ports?: number[]): Promise<ElectronAppInfo[]> {
-  logger.debug('Scanning for running Electron applications...');
+export async function scanForElectronApps(
+  ports?: number[],
+  host?: string,
+): Promise<ElectronAppInfo[]> {
+  const effectiveHost = host || 'localhost';
+  logger.debug(`Scanning for running Electron applications on ${effectiveHost}...`);
 
   const portsToScan = ports ?? [
-    9222, 9223, 9224, 9225, // Default ports
-    9200, 9201, 9202, 9203, 9204, 9205, // Security test range
-    9300, 9301, 9302, 9303, 9304, 9305, // Integration test range
-    9400, 9401, 9402, 9403, 9404, 9405, // Additional range
+    9222,
+    9223,
+    9224,
+    9225, // Default ports
+    9200,
+    9201,
+    9202,
+    9203,
+    9204,
+    9205, // Security test range
+    9300,
+    9301,
+    9302,
+    9303,
+    9304,
+    9305, // Integration test range
+    9400,
+    9401,
+    9402,
+    9403,
+    9404,
+    9405, // Additional range
   ];
   const foundApps: ElectronAppInfo[] = [];
 
   for (const port of portsToScan) {
     try {
-      const response = await fetch(`http://localhost:${port}/json`, {
+      const response = await fetch(`http://${effectiveHost}:${port}/json`, {
         signal: AbortSignal.timeout(1000),
       });
 
@@ -124,13 +147,15 @@ export function findMainTarget(targets: any[]): any | null {
  * List all available Electron window targets across all detected apps.
  * @param includeDevTools - Whether to include DevTools windows (default: false)
  * @param ports - Optional list of specific ports to scan
+ * @param host - Optional host to connect to. Defaults to 'localhost'.
  * @returns Array of window targets with id, title, url, port, and type
  */
 export async function listElectronWindows(
   includeDevTools: boolean = false,
   ports?: number[],
+  host?: string,
 ): Promise<ElectronWindowTarget[]> {
-  const foundApps = await scanForElectronApps(ports);
+  const foundApps = await scanForElectronApps(ports, host);
   const windows: ElectronWindowTarget[] = [];
 
   for (const app of foundApps) {
@@ -156,13 +181,15 @@ export async function listElectronWindows(
  * Get window information from any running Electron app
  * @param includeChildren - Whether to include child/DevTools windows
  * @param ports - Optional list of specific ports to scan
+ * @param host - Optional host to connect to. Defaults to 'localhost'.
  */
 export async function getElectronWindowInfo(
   includeChildren: boolean = false,
   ports?: number[],
+  host?: string,
 ): Promise<ElectronWindowResult> {
   try {
-    const foundApps = await scanForElectronApps(ports);
+    const foundApps = await scanForElectronApps(ports, host);
 
     if (foundApps.length === 0) {
       return {

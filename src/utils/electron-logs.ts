@@ -18,18 +18,21 @@ export interface LogEntry {
  * @param lines - Number of recent lines to read
  * @param follow - Whether to follow/tail the logs
  * @param ports - Optional list of specific ports to scan
+ * @param host - Optional host to connect to
  */
 export async function readElectronLogs(
   logType: LogType = 'all',
   lines: number = 100,
   follow: boolean = false,
   ports?: number[],
+  host?: string,
 ): Promise<string> {
   try {
     logger.info('[MCP] Looking for running Electron applications for log access...');
 
     try {
-      const windowOptions: WindowTargetOptions | undefined = ports ? { ports } : undefined;
+      const windowOptions: WindowTargetOptions | undefined =
+        ports || host ? { ports, host } : undefined;
       const target = await findElectronTarget(windowOptions);
 
       // Connect via WebSocket to get console logs

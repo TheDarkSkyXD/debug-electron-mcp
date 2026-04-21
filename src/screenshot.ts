@@ -14,31 +14,33 @@ export interface ScreenshotOptions {
   windowTitle?: string;
   /** Specific ports to scan (overrides default port scanning) */
   ports?: number[];
+  /** Host to connect to (defaults to 'localhost') */
+  host?: string;
 }
 
 /**
  * Take a screenshot of the running Electron application using Chrome DevTools Protocol
  */
-export async function takeScreenshot(
-  options: ScreenshotOptions = {},
-): Promise<{
+export async function takeScreenshot(options: ScreenshotOptions = {}): Promise<{
   filePath?: string;
   base64: string;
   data: string;
   error?: string;
 }> {
-  const { outputPath, targetId, windowTitle, ports } = options;
+  const { outputPath, targetId, windowTitle, ports, host } = options;
+  const effectiveHost = host || 'localhost';
 
   logger.info('📸 Taking screenshot of Electron application', {
     outputPath,
     targetId,
     windowTitle,
+    host: effectiveHost,
     timestamp: new Date().toISOString(),
   });
 
   try {
     // Find running Electron applications
-    const apps = await scanForElectronApps(ports);
+    const apps = await scanForElectronApps(ports, effectiveHost);
     if (apps.length === 0) {
       throw new Error('No running Electron applications found with remote debugging enabled');
     }
@@ -86,7 +88,7 @@ export async function takeScreenshot(
     }
 
     // Connect to the Electron app's debugging port
-    const browser = await chromium.connectOverCDP(`http://localhost:${targetApp.port}`);
+    const browser = await chromium.connectOverCDP(`http://${effectiveHost}:${targetApp.port}`);
     const contexts = browser.contexts();
 
     if (contexts.length === 0) {

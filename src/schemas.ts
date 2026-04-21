@@ -62,11 +62,15 @@ export const TakeScreenshotSchema = z.object({
   targetId: z
     .string()
     .optional()
-    .describe('CDP target ID to screenshot a specific window (exact match, takes priority over windowTitle)'),
+    .describe(
+      'CDP target ID to screenshot a specific window (exact match, takes priority over windowTitle)',
+    ),
   windowTitle: z
     .string()
     .optional()
-    .describe('Window title to screenshot (case-insensitive partial match). Use list_electron_windows to see available windows.'),
+    .describe(
+      'Window title to screenshot (case-insensitive partial match). Use list_electron_windows to see available windows.',
+    ),
   projectName: z
     .string()
     .optional()
@@ -120,6 +124,10 @@ export const RegisterProjectSchema = z.object({
     .number()
     .optional()
     .describe('Explicit port number (auto-assigned from range if omitted)'),
+  host: z
+    .string()
+    .optional()
+    .describe('Host IP to connect to (e.g., Windows IP when debugging from WSL)'),
   windowTitlePattern: z
     .string()
     .optional()

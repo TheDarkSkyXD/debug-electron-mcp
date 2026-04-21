@@ -25,6 +25,8 @@ export interface WindowTargetOptions {
   windowTitle?: string;
   /** Specific ports to scan (overrides default port scanning) */
   ports?: number[];
+  /** Host to connect to (defaults to 'localhost') */
+  host?: string;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface WindowTargetOptions {
 export async function findElectronTarget(options?: WindowTargetOptions): Promise<DevToolsTarget> {
   logger.debug('Looking for running Electron applications...');
 
-  const foundApps = await scanForElectronApps(options?.ports);
+  const foundApps = await scanForElectronApps(options?.ports, options?.host);
 
   if (foundApps.length === 0) {
     throw new Error(

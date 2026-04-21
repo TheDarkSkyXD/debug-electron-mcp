@@ -5,10 +5,12 @@ import { logger } from './utils/logger';
 
 export interface ProjectConfig {
   port: number;
+  host?: string;
   windowTitlePattern?: string;
 }
 
 export interface RegistryConfig {
+  host?: string;
   portRange: [number, number];
   projects: Record<string, ProjectConfig>;
 }
@@ -30,6 +32,10 @@ class ProjectRegistry {
     this.load();
   }
 
+  getHost(): string {
+    return this.config.host || 'localhost';
+  }
+
   static getInstance(): ProjectRegistry {
     if (!ProjectRegistry.instance) {
       ProjectRegistry.instance = new ProjectRegistry();
@@ -37,12 +43,18 @@ class ProjectRegistry {
     return ProjectRegistry.instance;
   }
 
-  register(name: string, port?: number, windowTitlePattern?: string): ProjectConfig {
+  register(name: string, port?: number, windowTitlePattern?: string, host?: string): ProjectConfig {
     if (this.config.projects[name]) {
       const existing = this.config.projects[name];
       // Update windowTitlePattern if provided
       if (windowTitlePattern !== undefined) {
         existing.windowTitlePattern = windowTitlePattern;
+      }
+      // Update host if provided
+      if (host !== undefined) {
+        existing.host = host;
+      }
+      if (windowTitlePattern !== undefined || host !== undefined) {
         this.save();
       }
       return existing;
@@ -52,6 +64,9 @@ class ProjectRegistry {
     const projectConfig: ProjectConfig = { port: assignedPort };
     if (windowTitlePattern) {
       projectConfig.windowTitlePattern = windowTitlePattern;
+    }
+    if (host) {
+      projectConfig.host = host;
     }
 
     this.config.projects[name] = projectConfig;
@@ -105,6 +120,9 @@ class ProjectRegistry {
       if (fs.existsSync(this.configPath)) {
         const data = fs.readFileSync(this.configPath, 'utf-8');
         const parsed = JSON.parse(data);
+        if (parsed.host !== undefined) {
+          this.config.host = parsed.host;
+        }
         if (parsed.portRange) {
           this.config.portRange = parsed.portRange;
         }
