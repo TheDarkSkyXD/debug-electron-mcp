@@ -13,7 +13,7 @@ function parseArgs(argv: string[]) {
   let project: string | undefined;
   let mode: 'stdio' | 'serve' = 'stdio';
   let httpPort = 3100;
-  let httpHost = '0.0.0.0';
+  let httpHost = '127.0.0.1';
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'serve') {

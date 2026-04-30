@@ -31,7 +31,7 @@ function sendJson(res: ServerResponse, status: number, data: unknown) {
  * Uses only Node built-in http — no express or other dependencies.
  * Supports multiple concurrent AI client sessions.
  */
-export async function startHttpServer(port: number = 3100, host: string = '0.0.0.0'): Promise<void> {
+export async function startHttpServer(port: number = 3100, host: string = '127.0.0.1'): Promise<void> {
   // Map of session ID -> transport
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 

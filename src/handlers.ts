@@ -122,7 +122,7 @@ export async function handleToolCall(request: CallToolRequest) {
         const host = resolveHost(projectName);
 
         // Build window target options if specified
-        const windowOptions: WindowTargetOptions | undefined =
+        const windowOptions: WindowTargetOptions =
           targetId || windowTitle || ports ? { targetId, windowTitle, ports, host } : { host };
 
         const result = await sendCommandToElectron(command, commandArgs, windowOptions);
