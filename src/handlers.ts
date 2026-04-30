@@ -12,7 +12,11 @@ import {
   ListProjectsSchema,
 } from './schemas';
 import { sendCommandToElectron } from './utils/electron-enhanced-commands';
-import { getElectronWindowInfo, listElectronWindows, scanForElectronApps } from './utils/electron-discovery';
+import {
+  getElectronWindowInfo,
+  listElectronWindows,
+  scanForElectronApps,
+} from './utils/electron-discovery';
 import { WindowTargetOptions } from './utils/electron-connection';
 import { readElectronLogs } from './utils/electron-logs';
 import { takeScreenshot } from './screenshot';
@@ -24,6 +28,17 @@ let defaultProjectName: string | undefined;
 
 export function setDefaultProject(name: string | undefined) {
   defaultProjectName = name;
+}
+
+function resolveHost(projectName?: string): string {
+  const effectiveName = projectName || defaultProjectName;
+  if (effectiveName) {
+    const config = projectRegistry.resolve(effectiveName);
+    if (config?.host) {
+      return config.host;
+    }
+  }
+  return projectRegistry.getHost();
 }
 
 /**
@@ -51,7 +66,8 @@ export async function handleToolCall(request: CallToolRequest) {
       case ToolName.GET_ELECTRON_WINDOW_INFO: {
         const { includeChildren, projectName } = GetElectronWindowInfoSchema.parse(args);
         const ports = resolveProjectPorts(projectName);
-        const result = await getElectronWindowInfo(includeChildren, ports);
+        const host = resolveHost(projectName);
+        const result = await getElectronWindowInfo(includeChildren, ports, host);
         return {
           content: [
             {
@@ -66,7 +82,8 @@ export async function handleToolCall(request: CallToolRequest) {
       case ToolName.TAKE_SCREENSHOT: {
         const { outputPath, targetId, windowTitle, projectName } = TakeScreenshotSchema.parse(args);
         const ports = resolveProjectPorts(projectName);
-        const result = await takeScreenshot({ outputPath, targetId, windowTitle, ports });
+        const host = resolveHost(projectName);
+        const result = await takeScreenshot({ outputPath, targetId, windowTitle, ports, host });
 
         const content: any[] = [];
 
@@ -102,12 +119,11 @@ export async function handleToolCall(request: CallToolRequest) {
         } = SendCommandToElectronSchema.parse(args);
 
         const ports = resolveProjectPorts(projectName);
+        const host = resolveHost(projectName);
 
         // Build window target options if specified
-        const windowOptions: WindowTargetOptions | undefined =
-          targetId || windowTitle || ports
-            ? { targetId, windowTitle, ports }
-            : undefined;
+        const windowOptions: WindowTargetOptions =
+          targetId || windowTitle || ports ? { targetId, windowTitle, ports, host } : { host };
 
         const result = await sendCommandToElectron(command, commandArgs, windowOptions);
         return {
@@ -119,7 +135,8 @@ export async function handleToolCall(request: CallToolRequest) {
       case ToolName.READ_ELECTRON_LOGS: {
         const { logType, lines, follow, projectName } = ReadElectronLogsSchema.parse(args);
         const ports = resolveProjectPorts(projectName);
-        const logs = await readElectronLogs(logType, lines, follow, ports);
+        const host = resolveHost(projectName);
+        const logs = await readElectronLogs(logType, lines, follow, ports, host);
 
         if (follow) {
           return {
@@ -147,7 +164,8 @@ export async function handleToolCall(request: CallToolRequest) {
       case ToolName.LIST_ELECTRON_WINDOWS: {
         const { includeDevTools, projectName } = ListElectronWindowsSchema.parse(args);
         const ports = resolveProjectPorts(projectName);
-        const windows = await listElectronWindows(includeDevTools, ports);
+        const host = resolveHost(projectName);
+        const windows = await listElectronWindows(includeDevTools, ports, host);
 
         if (windows.length === 0) {
           return {
@@ -179,13 +197,14 @@ export async function handleToolCall(request: CallToolRequest) {
       }
 
       case ToolName.REGISTER_PROJECT: {
-        const { projectName, port, windowTitlePattern } = RegisterProjectSchema.parse(args);
-        const config = projectRegistry.register(projectName, port, windowTitlePattern);
+        const { projectName, port, host, windowTitlePattern } = RegisterProjectSchema.parse(args);
+        const config = projectRegistry.register(projectName, port, windowTitlePattern, host);
 
         // Check if the port is currently reachable
         let statusNote = '';
         try {
-          const apps = await scanForElectronApps([config.port]);
+          const host = config.host || projectRegistry.getHost();
+          const apps = await scanForElectronApps([config.port], host);
           if (apps.length > 0) {
             statusNote = `\n\nNote: An Electron app is already running on port ${config.port} with ${apps[0].targets.length} window(s).`;
           }
@@ -198,6 +217,8 @@ export async function handleToolCall(request: CallToolRequest) {
             {
               type: 'text',
               text: `Project "${projectName}" registered on port ${config.port}.${
+                config.host ? ` Host: ${config.host}.` : ''
+              }${
                 config.windowTitlePattern
                   ? ` Window title filter: "${config.windowTitlePattern}".`
                   : ''
@@ -257,7 +278,8 @@ export async function handleToolCall(request: CallToolRequest) {
         for (const [name, config] of entries) {
           let status = 'not connected';
           try {
-            const apps = await scanForElectronApps([config.port]);
+            const host = config.host || projectRegistry.getHost();
+            const apps = await scanForElectronApps([config.port], host);
             if (apps.length > 0) {
               status = `connected (${apps[0].targets.length} window(s))`;
             }
@@ -268,7 +290,7 @@ export async function handleToolCall(request: CallToolRequest) {
           lines.push(
             `- ${name}: port ${config.port} [${status}]${
               config.windowTitlePattern ? ` (filter: "${config.windowTitlePattern}")` : ''
-            }`,
+            }${config.host ? ` (host: ${config.host})` : ''}`,
           );
         }
 

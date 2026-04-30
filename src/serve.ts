@@ -31,7 +31,7 @@ function sendJson(res: ServerResponse, status: number, data: unknown) {
  * Uses only Node built-in http — no express or other dependencies.
  * Supports multiple concurrent AI client sessions.
  */
-export async function startHttpServer(port: number = 3100): Promise<void> {
+export async function startHttpServer(port: number = 3100, host: string = '127.0.0.1'): Promise<void> {
   // Map of session ID -> transport
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
@@ -130,8 +130,8 @@ export async function startHttpServer(port: number = 3100): Promise<void> {
     }
   });
 
-  server.listen(port, '127.0.0.1', () => {
-    logger.info(`Electron MCP HTTP Server listening on http://127.0.0.1:${port}`);
+  server.listen(port, host, () => {
+    logger.info(`Electron MCP HTTP Server listening on http://${host}:${port}`);
     logger.info(`MCP endpoint: http://localhost:${port}/mcp`);
     logger.info(`Health check: http://localhost:${port}/health`);
     logger.info('Available tools:', tools.map((t) => t.name).join(', '));
