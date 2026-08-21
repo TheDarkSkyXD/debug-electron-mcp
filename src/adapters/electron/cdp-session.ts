@@ -22,6 +22,11 @@ export class CdpConnectionUnavailableError extends Error {
   override readonly name = 'CdpConnectionUnavailableError';
 }
 
+export interface CdpConnectionAttempt {
+  readonly session: Promise<CdpSession>;
+  readonly cancel: () => void;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
@@ -61,30 +66,56 @@ export class CdpSession {
   static connect(
     url: string,
     onClose: (session: CdpSession) => void = () => undefined,
+    timeoutMs = 10_000,
   ): Promise<CdpSession> {
-    return new Promise((resolve, reject) => {
+    return CdpSession.beginConnect(url, onClose, timeoutMs).session;
+  }
+
+  static beginConnect(
+    url: string,
+    onClose: (session: CdpSession) => void = () => undefined,
+    timeoutMs = 10_000,
+  ): CdpConnectionAttempt {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('CDP connection timeout must be positive.');
+    }
+
+    let cancel: () => void = () => undefined;
+    const session = new Promise<CdpSession>((resolve, reject) => {
       const socket = new WebSocket(url);
+      let settled = false;
+      const timeout = setTimeout(() => {
+        fail(`CDP connection timed out after ${timeoutMs}ms.`);
+      }, timeoutMs);
+      timeout.unref();
+      const cleanup = () => {
+        clearTimeout(timeout);
+        socket.off('error', handleError);
+        socket.off('close', handleClose);
+      };
       const fail = (message: string, cause?: unknown) => {
+        if (settled) return;
+        settled = true;
         cleanup();
         socket.on('error', () => undefined);
-        socket.terminate();
+        if (socket.readyState !== WebSocket.CLOSED) socket.terminate();
         reject(new CdpConnectionOpenError(message, { cause }));
       };
       const handleError = (error: Error) =>
         fail(`Failed to open CDP connection: ${error.message}`, error);
       const handleClose = () => fail('CDP connection closed before it opened.');
-      const cleanup = () => {
-        socket.off('error', handleError);
-        socket.off('close', handleClose);
-      };
+      cancel = () => fail('CDP connection opening was cancelled.');
 
       socket.once('error', handleError);
       socket.once('close', handleClose);
       socket.once('open', () => {
+        if (settled) return;
+        settled = true;
         cleanup();
         resolve(new CdpSession(socket, onClose));
       });
     });
+    return { session, cancel: () => cancel() };
   }
 
   get isOpen(): boolean {

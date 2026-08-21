@@ -110,10 +110,11 @@ This controlled loopback benchmark makes one cold call followed by 20 warm calls
 
 | Stage | Cold call | Warm median | Warm p95 | Reuse evidence |
 | --- | ---: | ---: | ---: | --- |
-| Electron discovery | 23.86 ms | 0.0028 ms | 0.0082 ms | 6 network probes total across all 21 scans |
-| CDP evaluation | 7.79 ms | 0.1676 ms | 0.2416 ms | 1 WebSocket connection for all 21 evaluations |
+| Electron discovery | 31.23 ms | 0.0039 ms | 0.0090 ms | 6 network probes total across all 21 scans |
+| CDP evaluation | 9.26 ms | 0.1476 ms | 0.2536 ms | 1 WebSocket connection for all 21 evaluations |
+| MCP `tools/call` | 74.94 ms | 2.88 ms | 7.65 ms | 1 discovery request and 1 CDP connection for 21 tool calls |
 
-The warm calls avoid both repeated port probing and repeated WebSocket handshakes. These numbers isolate the MCP adapter overhead; real commands still include renderer execution time and any model time between tool calls. If the gap between calls exceeds the five-second discovery TTL or 15-second CDP idle TTL, the next call safely pays the cold-path cost again.
+The first two rows isolate adapter overhead. The third sends real stateless HTTP `tools/call` requests through the MCP transport, with controlled local discovery and CDP endpoints. Real commands still include renderer execution time and any model time between tool calls. If the gap between calls exceeds the five-second discovery TTL or 15-second CDP idle TTL, the next call safely pays the cold-path cost again.
 
 ### Build and verification
 

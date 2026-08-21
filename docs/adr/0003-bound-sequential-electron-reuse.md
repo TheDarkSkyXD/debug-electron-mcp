@@ -15,13 +15,13 @@ Protocol statelessness does not require the process to discard replaceable cache
 One `ElectronAutomation` adapter owns two bounded runtime optimizations:
 
 - `ElectronDiscoveryCache` caches normalized port selections for 5 seconds. It holds at most 16 selections, coalesces concurrent identical probes, returns copies, and caches no MCP request data.
-- `CdpConnectionPool` retains a CDP connection for 15 seconds after use. It holds at most 8 target connections and evicts the least recently used connection at capacity.
+- `CdpConnectionPool` retains a CDP connection for 15 seconds after use. It holds at most 8 target connections and evicts the least recently used idle connection at capacity. Admission reserves capacity before asynchronous work begins, and an active evaluation is never evicted to admit another target.
 
 Each pooled CDP connection assigns a unique message ID to every evaluation and keeps independent pending resolvers. Concurrent calls can share a socket without sharing command state.
 
 If a cached target cannot open a CDP connection, the adapter invalidates that discovery entry, probes again, and retries against the refreshed target. The adapter does not retry an evaluation after transmission because repeating a click, type, drag, navigation, or arbitrary `eval` could duplicate a side effect.
 
-The pool closes a failed or remote-closed socket. Idle timers do not keep the Node.js process alive. `ElectronAutomation.close()` clears discovery data and closes every retained socket. The HTTP and stdio entry points close the adapter on `SIGINT` and `SIGTERM`.
+The pool closes a failed or remote-closed socket. Connection opening has a 10-second timeout and can be cancelled immediately during pool shutdown. Idle timers do not keep the Node.js process alive. `ElectronAutomation.close()` clears discovery data and closes every retained socket. The HTTP and stdio entry points close the adapter on `SIGINT` and `SIGTERM`, even if transport cleanup fails.
 
 Log snapshots keep their request-owned event connection because they install temporary listeners. Playwright screenshot browsers also remain request-scoped and close in `finally`.
 
@@ -39,6 +39,6 @@ The adapter now owns concurrent mutable connection state. `CdpSession` isolates 
 
 ## Verification
 
-Real local HTTP and WebSocket tests prove concurrent coalescing, sequential reuse, concurrent evaluation, closed-socket replacement, TTL eviction, capacity eviction, stale-target refresh, and shutdown cleanup.
+Real local HTTP and WebSocket tests prove concurrent cold-call coalescing, hard capacity under concurrent admission, sequential reuse, concurrent evaluation, active-call protection, bounded and cancellable opening, closed-socket replacement, TTL eviction, capacity eviction, stale-target refresh, and shutdown cleanup.
 
-`npm run measure:mcp` compares the cold and warm paths. In the acceptance run, discovery fell from 23.86 ms cold to 0.0028 ms median warm. CDP evaluation fell from 7.79 ms cold to 0.1676 ms median warm. Twenty-one evaluations used one connection.
+`npm run measure:mcp` compares the cold and warm paths. In the review-fix run, discovery fell from 31.23 ms cold to 0.0039 ms median warm. CDP evaluation fell from 9.26 ms cold to 0.1476 ms median warm. The end-to-end MCP benchmark fell from 74.94 ms for the cold tool call to 2.88 ms median for the next 20 calls. All 21 tool calls used one discovery request and one CDP connection.

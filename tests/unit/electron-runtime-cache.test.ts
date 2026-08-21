@@ -1,5 +1,6 @@
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
+import { createServer as createTcpServer, type Socket } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { CdpConnectionPool } from '../../src/adapters/electron/cdp-connection-pool';
@@ -190,6 +191,107 @@ describe('CDP connection pool', () => {
     expect(third?.value).toBe(3);
     expect(cdp.connectionCount()).toBe(1);
     expect(cdp.evaluationCount()).toBe(3);
+  });
+
+  it('coalesces concurrent cold evaluations onto one connection', async () => {
+    const cdp = await createCdpServer();
+    servers.push(cdp.server);
+    const pool = new CdpConnectionPool({ idleTtlMs: 5_000, maxConnections: 4 });
+    pools.push(pool);
+
+    await Promise.all([
+      pool.evaluate(cdp.url, '1'),
+      pool.evaluate(cdp.url, '2'),
+      pool.evaluate(cdp.url, '3'),
+    ]);
+
+    expect(cdp.connectionCount()).toBe(1);
+    expect(cdp.evaluationCount()).toBe(3);
+  });
+
+  it('keeps the hard capacity limit during concurrent cold evaluations', async () => {
+    const firstServer = await createCdpServer(25);
+    const secondServer = await createCdpServer(25);
+    servers.push(firstServer.server, secondServer.server);
+    const pool = new CdpConnectionPool({ idleTtlMs: 5_000, maxConnections: 1 });
+    pools.push(pool);
+
+    const results = await Promise.allSettled([
+      pool.evaluate(firstServer.url, '1'),
+      pool.evaluate(secondServer.url, '2'),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    expect(firstServer.connectionCount() + secondServer.connectionCount()).toBe(1);
+  });
+
+  it('times out and cancels an opening connection', async () => {
+    const sockets = new Set<Socket>();
+    const server = createTcpServer((socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (typeof address !== 'object' || address === null) {
+      throw new Error('Test TCP server did not bind to a port.');
+    }
+    const pool = new CdpConnectionPool({
+      connectionTimeoutMs: 20,
+      idleTtlMs: 5_000,
+      maxConnections: 1,
+    });
+
+    try {
+      const startedAt = performance.now();
+      await expect(pool.evaluate(`ws://127.0.0.1:${address.port}`, '1')).rejects.toThrow(
+        'timed out',
+      );
+      await pool.close();
+      expect(performance.now() - startedAt).toBeLessThan(500);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it('cancels an opening connection during pool shutdown', async () => {
+    const sockets = new Set<Socket>();
+    const server = createTcpServer((socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (typeof address !== 'object' || address === null) {
+      throw new Error('Test TCP server did not bind to a port.');
+    }
+    const pool = new CdpConnectionPool({
+      connectionTimeoutMs: 5_000,
+      idleTtlMs: 5_000,
+      maxConnections: 1,
+    });
+
+    try {
+      const evaluation = pool.evaluate(`ws://127.0.0.1:${address.port}`, '1');
+      void evaluation.catch(() => undefined);
+      while (sockets.size === 0) await new Promise(setImmediate);
+      const startedAt = performance.now();
+      await pool.close();
+
+      await expect(evaluation).rejects.toThrow('cancelled');
+      expect(performance.now() - startedAt).toBeLessThan(500);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it('evicts a closed connection and reconnects on the next evaluation', async () => {

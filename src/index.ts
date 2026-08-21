@@ -34,6 +34,12 @@ function registerShutdown(close: () => Promise<void>): void {
   process.once('SIGTERM', shutdown);
 }
 
+async function closeAll(resources: readonly (() => Promise<void>)[]): Promise<void> {
+  const results = await Promise.allSettled(resources.map((close) => close()));
+  const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+  if (errors.length > 0) throw new AggregateError(errors, 'One or more resources failed to close.');
+}
+
 async function main(): Promise<void> {
   const automation = createElectronAutomation();
   const dependencies = {
@@ -44,20 +50,14 @@ async function main(): Promise<void> {
 
   if (process.argv.includes('serve')) {
     const http = await startHttpServer(createServer, parsePort(process.argv));
-    registerShutdown(async () => {
-      await http.close();
-      await automation.close();
-    });
+    registerShutdown(() => closeAll([() => http.close(), () => automation.close()]));
     return;
   }
   const stdio = serveStdio(createServer, {
     legacy: 'reject',
     onerror: (error) => logger.error('MCP stdio error:', error),
   });
-  registerShutdown(async () => {
-    await stdio.close();
-    await automation.close();
-  });
+  registerShutdown(() => closeAll([() => stdio.close(), () => automation.close()]));
 }
 
 void main().catch((error: unknown) => {
