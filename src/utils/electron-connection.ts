@@ -4,13 +4,6 @@ import { logger } from './logger';
 
 export type { DevToolsTarget } from './electron-discovery';
 
-export interface CommandResult {
-  success: boolean;
-  result?: any;
-  error?: string;
-  message: string;
-}
-
 /** Options for targeting a specific Electron window */
 export interface WindowTargetOptions {
   /** CDP target ID (exact match) */
@@ -268,7 +261,12 @@ export async function connectForLogs(
         } else if (response.method === 'Runtime.consoleAPICalled') {
           const call = response.params;
           const timestamp = new Date().toISOString();
-          const args = call.args?.map((arg: any) => arg.value || arg.description).join(' ') || '';
+          const args =
+            call.args
+              ?.map((arg: { value?: unknown; description?: string }) =>
+                String(arg.value ?? arg.description ?? ''),
+              )
+              .join(' ') || '';
           const logEntry = `[${timestamp}] ${call.type.toUpperCase()}: ${args}`;
           onLog?.(logEntry);
         }

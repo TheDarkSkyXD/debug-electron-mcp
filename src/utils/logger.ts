@@ -44,25 +44,25 @@ export class Logger {
     this.level = level;
   }
 
-  error(message: string, ...args: any[]) {
+  error(message: string, ...args: unknown[]) {
     if (this.level >= LogLevel.ERROR) {
       console.error(`[MCP] ERROR: ${message}`, ...args);
     }
   }
 
-  warn(message: string, ...args: any[]) {
+  warn(message: string, ...args: unknown[]) {
     if (this.level >= LogLevel.WARN) {
       console.error(`[MCP] WARN: ${message}`, ...args);
     }
   }
 
-  info(message: string, ...args: any[]) {
+  info(message: string, ...args: unknown[]) {
     if (this.level >= LogLevel.INFO) {
       console.error(`[MCP] INFO: ${message}`, ...args);
     }
   }
 
-  debug(message: string, ...args: any[]) {
+  debug(message: string, ...args: unknown[]) {
     if (this.level >= LogLevel.DEBUG) {
       console.error(`[MCP] DEBUG: ${message}`, ...args);
     }

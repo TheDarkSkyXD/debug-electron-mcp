@@ -30,7 +30,7 @@ export async function takeScreenshot(options: ScreenshotOptions = {}): Promise<S
   const { outputPath, targetId, windowTitle, ports } = options;
   const delivery = options.delivery ?? (outputPath ? 'file' : 'inline');
 
-  logger.info('📸 Taking screenshot of Electron application', {
+  logger.info('Taking screenshot of Electron application', {
     outputPath,
     targetId,
     windowTitle,

@@ -16,7 +16,7 @@ module.exports = {
     extensions: ['.ts', '.js'],
     modules: ['node_modules', 'src'],
   },
-  externals: [nodeExternals({ allowlist: [/@modelcontextprotocol\/.*/] })],
+  externals: [nodeExternals()],
   module: { rules: [{ test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ }] },
   plugins: [new webpack.BannerPlugin({ banner: '#!/usr/bin/env node', raw: true, entryOnly: true })],
   optimization: { minimize: false },

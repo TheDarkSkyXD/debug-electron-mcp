@@ -100,10 +100,6 @@ export class ProjectRegistry {
     );
   }
 
-  save(): void {
-    this.writeAtomic(this.config);
-  }
-
   private persist(nextConfig: RegistryConfig): void {
     this.writeAtomic(nextConfig);
     this.config = nextConfig;
