@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 
 const minimumAgeDays = 7;
 const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-const lockfile = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const lockfile = JSON.parse(
+  await readFile(new URL('../package-lock.json', import.meta.url), 'utf8'),
+);
 const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
 const now = Date.now();
 const minimumAgeMs = minimumAgeDays * 24 * 60 * 60 * 1000;
@@ -41,41 +43,55 @@ async function mapBounded(items, mapper, concurrency = 8) {
   return results;
 }
 
-const packageEntries = Object.entries(lockfile.packages ?? {})
+const lockfilePackages = lockfile.packages ?? {};
+const packageEntries = Object.entries(lockfilePackages)
   .map(([packagePath, packageInfo]) => ({
     packagePath,
-    name: packageInfo?.name ?? lockfilePackageName(packagePath),
+    declaredName: lockfilePackageName(packagePath),
+    registryName: packageInfo?.name ?? lockfilePackageName(packagePath),
     version: packageInfo?.version,
   }))
-  .filter((entry) => entry.name && typeof entry.version === 'string');
+  .filter((entry) => entry.declaredName && entry.registryName && typeof entry.version === 'string');
 
-for (const name of Object.keys(dependencies)) {
-  if (!packageEntries.some((entry) => entry.packagePath === `node_modules/${name}`)) {
-    throw new Error(`Lockfile has no resolved version for ${name}.`);
+const directPackageEntries = Object.keys(dependencies).map((declaredName) => {
+  const packagePath = `node_modules/${declaredName}`;
+  const packageInfo = lockfilePackages[packagePath];
+  if (!packageInfo || typeof packageInfo.version !== 'string') {
+    throw new Error(`Lockfile has no resolved version for ${declaredName}.`);
   }
-}
-
-const directPackageEntries = packageEntries.filter(
-  (entry) => Object.hasOwn(dependencies, entry.name) && entry.packagePath === `node_modules/${entry.name}`,
-);
+  return {
+    packagePath,
+    declaredName,
+    registryName: packageInfo.name ?? declaredName,
+    version: packageInfo.version,
+  };
+});
 const checkedEntries = checkAllLockfileEntries ? packageEntries : directPackageEntries;
 
 const results = await mapBounded(checkedEntries, async (entry) => {
-  const metadata = await packageMetadata(entry.name);
+  const metadata = await packageMetadata(entry.registryName);
   const publishedAt = new Date(metadata.time?.[entry.version]);
   if (Number.isNaN(publishedAt.valueOf())) {
-    throw new Error(`No publish time exists for ${entry.name}@${entry.version}.`);
+    throw new Error(`No publish time exists for ${entry.registryName}@${entry.version}.`);
   }
   const ageMs = now - publishedAt.valueOf();
   return { ...entry, ageMs, ageDays: ageMs / (24 * 60 * 60 * 1000) };
 });
 
 const directResults = results
-  .filter((entry) => Object.hasOwn(dependencies, entry.name))
-  .sort((left, right) => left.name.localeCompare(right.name));
+  .filter(
+    (entry) =>
+      entry.packagePath === `node_modules/${entry.declaredName}` &&
+      Object.hasOwn(dependencies, entry.declaredName),
+  )
+  .sort((left, right) => left.declaredName.localeCompare(right.declaredName));
 
 for (const entry of directResults) {
-  console.log(`${entry.name}\t${entry.version}\t${entry.ageDays.toFixed(1)} days\tdeclared ${dependencies[entry.name]}`);
+  const registryPackageSuffix =
+    entry.registryName === entry.declaredName ? '' : `\tregistry ${entry.registryName}`;
+  console.log(
+    `${entry.declaredName}\t${entry.version}\t${entry.ageDays.toFixed(1)} days\tdeclared ${dependencies[entry.declaredName]}${registryPackageSuffix}`,
+  );
 }
 
 console.log(
@@ -83,11 +99,16 @@ console.log(
     `${directResults.length} direct dependencies; minimum age ${minimumAgeDays} days`,
 );
 if (!checkAllLockfileEntries) {
-  console.log('transitive dependency freshness is handled by npm audit; pass --all to inspect every lockfile entry');
+  console.log(
+    'transitive dependency freshness is handled by npm audit; pass --all to inspect every lockfile entry',
+  );
 }
 
 const failures = results
   .filter((entry) => entry.ageMs < minimumAgeMs)
-  .map((entry) => `${entry.name}@${entry.version} at ${entry.packagePath} is ${entry.ageDays.toFixed(1)} days old`);
+  .map(
+    (entry) =>
+      `${entry.declaredName} (${entry.registryName})@${entry.version} at ${entry.packagePath} is ${entry.ageDays.toFixed(1)} days old`,
+  );
 
 if (failures.length > 0) throw new Error(`Dependency maturity gate failed. ${failures.join('; ')}`);
