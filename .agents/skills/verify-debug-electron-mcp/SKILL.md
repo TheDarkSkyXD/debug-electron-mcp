@@ -1,110 +1,88 @@
 ---
 name: verify-debug-electron-mcp
-description: Drive Debug Electron MCP through its stdio MCP interface against the bundled Electron demo app. Use after tool, CDP, screenshot, window-targeting, or interaction changes to prove behavior in a running desktop app.
+description: Bootstrap and run user-visible verification for any Electron app controlled through Debug Electron MCP. Use after Electron UI, CDP, screenshot, logging, or MCP changes, and when installing this skill into another Electron repository.
 ---
 
-# Verify Debug Electron MCP
+# Verify with Debug Electron MCP
 
-This skill drives the published product boundary. It launches the bundled Electron demo, starts the built MCP server through the SDK's stdio client, calls real tools, and records what the Electron window shows.
+Use Debug Electron MCP as the only interaction transport. Use the bundled helper only to launch, identify, and clean up the exact app process owned by the verification run.
 
-Run every command from the repository root in PowerShell.
+## Portability contract
 
-## Launch
+The reusable skill lives at `.agents/skills/verify-debug-electron-mcp/`. Project-specific data lives at `.agents/verify-electron/` and is never stored in the skill folder.
 
-The root and `examples/demo-app` dependencies must already exist. Launch builds the MCP server with the checked-in Webpack configuration, refuses to reuse an occupied port 9222, starts the demo with CDP enabled, and records the exact PID it owns.
+Copy the reusable skill directory into the same path in another Electron repository. On first use there, bootstrap the project profile and feature map described below. The helper uses only Node.js built-ins and has no dependency on this MCP server's source tree, package manager, or SDK.
+
+## Bootstrap a project
+
+If `.agents/verify-electron/profile.json` is absent:
+
+1. Inspect the repository's package scripts, Electron main entry, preload, renderer entry points, and existing remote-debugging setup.
+2. Choose one non-interactive launch command that starts the actual app with Chrome DevTools Protocol enabled on a dedicated port. Put preparation such as compilation inside that project command rather than inside this skill.
+3. Create `.agents/verify-electron/profile.json` using [the profile contract](references/project-profile.md). Keep commands and paths relative to the repository.
+4. Add the configured evidence root, normally `.verification/`, to the repository's ignore file.
+5. Create `.agents/verify-electron/features/README.md` and one file per important user behavior using [the feature-map contract](references/feature-map.md). Derive these from the real application; do not copy another project's selectors or flows.
+6. Run `node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs profile` and fix every validation error.
+7. Use Debug Electron MCP `list_projects`. If `projectName` is absent, call `register_project` with the profile's exact project name and port. If that name or port conflicts with an existing registration, stop instead of silently retargeting either project.
+
+Do not modify production behavior merely to make a proof easy. A dedicated debug launch script or development-only CDP switch is acceptable when the repository does not already expose one.
+
+## Start and identify the app
+
+Choose a unique run ID and retain it through cleanup:
 
 ```powershell
 $verifyRunId = "verify-$(Get-Date -Format yyyyMMdd-HHmmss)"
 node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs launch --run-id $verifyRunId
-```
-
-Ready means the command returns `"status": "ready"` with a live PID and a page target titled `MCP Demo App` on port 9222. The build and Electron logs are written under `.verification/debug-electron-mcp/$verifyRunId/evidence/`.
-
-Only one verification instance can run because the demo hardcodes port 9222. If launch says the port is occupied, stop. Do not drive or kill that existing instance.
-
-Teardown for the instance created above is:
-
-```powershell
-node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs cleanup --run-id $verifyRunId
-```
-
-## Doctor
-
-Run doctor after launch and whenever a tool result looks stale or targets the wrong window.
-
-```powershell
 node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs doctor --run-id $verifyRunId
 ```
 
-Doctor requires all of these facts:
+The helper refuses an occupied port, records the launched PID, excludes DevTools targets, and requires exactly one target matching the profile. `doctor` proves only process and CDP readiness.
 
-- The recorded Electron PID is alive.
-- CDP port 9222 exposes a page titled `MCP Demo App`.
-- A fresh stdio MCP connection reports the built server name and version.
-- The server lists all eight expected tools.
-- `list_electron_windows` sees the demo target on port 9222.
+Complete the transport check through Debug Electron MCP:
 
-The local stdio and CDP path has no authentication. Doctor records that fact instead of pretending to validate credentials that do not exist. Its report is saved as `evidence/doctor.json`.
+1. Call `list_electron_windows` with the profile's `projectName` and `includeDevTools: false`.
+2. Require the result to contain the same target ID, title, URL, and port reported by `doctor`.
+3. Call `get_electron_window_info` with that `projectName` when the behavior under test depends on window state.
+4. Use the returned exact `targetId` for every action and screenshot. Keep `projectName` on calls so multiple Electron apps cannot cross-target.
 
-## Drive
+Do not claim the app is ready until both the helper and MCP checks pass.
 
-Read [the feature map](./features/README.md) before choosing a recipe. The helper injects the current demo target ID for window-bound tools, so commands never depend on whichever window happens to come first.
+## Drive a feature
 
-Call any MCP tool with a JSON object:
+Read `.agents/verify-electron/features/README.md`, then open only the feature files relevant to the change.
 
-```powershell
-node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs call --run-id $verifyRunId --tool list_electron_windows --arguments '{}' --evidence windows.json
-node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs call --run-id $verifyRunId --tool send_command_to_electron --arguments '{"command":"get_page_structure"}' --evidence page-structure.json
-```
+For each entry point under test:
 
-Capture the visible window:
+1. Navigate through the same visible controls a user uses.
+2. Inspect with `get_page_structure`, `find_elements`, or another read-only `send_command_to_electron` command before choosing selectors.
+3. Act with `send_command_to_electron`, scoped by `projectName` and exact `targetId`.
+4. Prove the resulting renderer state with a second read-only command. A successful click response alone is not proof.
+5. Obtain an absolute screenshot path with `evidence-path`, pass it to `take_screenshot`, and validate it with `assert-png`.
+6. Inspect the image itself when layout, visibility, state, or rendering matters.
+7. Record a compact JSON summary with `record`, naming the feature, entry point, actions, observed state, screenshot, and any skipped path. In PowerShell, pipe JSON to `record --stdin` so native argument quoting cannot alter it.
 
-```powershell
-node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs screenshot --run-id $verifyRunId --name current-state.png
-```
+Prefer stable user-facing text, roles, labels, and explicit test IDs. Use `eval` only when the MCP's observation commands cannot expose the required rendered state, and never use it to call hidden application APIs instead of the visible workflow.
 
-The maintained smoke proof resets the visible counter, captures it, clicks the increment control through MCP, reads the rendered result and event log, then captures the changed window:
+## Evidence rules
 
-```powershell
-node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs prove-counter --run-id $verifyRunId
-```
-
-## Evidence
-
-Proof lives at `.verification/debug-electron-mcp/<run-id>/evidence/`. The directory is ignored by Git and survives cleanup.
-
-A valid proof must:
-
-- Drive a control through `send_command_to_electron`, not a test-only setter.
-- Record the MCP call and returned content.
-- Capture the state before and after the action when behavior changes state.
-- Read a second user-visible view such as rendered text or the event log.
-- Save a PNG with the `MCP Demo App` identity visible.
-- Report skipped feature-map entries as skipped. One convenient path does not prove the others.
-
-The helper replaces base64 image bodies in JSON transcripts with their encoded length. The PNG file is the image evidence. Mocks are not valid for this skill because the bundled demo and local MCP boundary are available.
+- Keep evidence under the profile's configured root and the current run ID.
+- Pair every mutation with an observable result.
+- Capture before and after images for meaningful visual or state transitions.
+- Record the target ID and project name in the proof summary.
+- Treat console output as diagnostic evidence, not as proof of visible behavior.
+- Report each skipped entry point and its unmet precondition. Do not transfer a pass from one path to another.
 
 ## Cleanup
 
-Always clean up in a `finally` step, including after a failed doctor or drive:
+Always clean up, including after a failed proof:
 
 ```powershell
 node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs cleanup --run-id $verifyRunId
 ```
 
-Cleanup uses the PID recorded at launch. On Windows it stops that PID's process tree. On Unix it signals that detached process group. It never kills by process name. It removes `state.json`, waits for port 9222 to close, writes `evidence/cleanup.json`, and leaves every proof artifact in place.
+Cleanup stops only the recorded process tree, confirms the configured port closed, removes transient state, and retains evidence. If the port remains open, report it and do not kill an untracked process.
 
-## Helpers
+## Maintain the installation
 
-The executable helper is `.agents/skills/verify-debug-electron-mcp/scripts/verify.mjs`. Invoke it with `node` as shown above.
-
-```text
-launch         Build the server and start the owned Electron demo instance.
-doctor         Check the PID, CDP target, MCP identity, tool list, and window discovery.
-call           Invoke one real MCP tool and optionally save its transcript.
-screenshot     Save and validate a PNG of the current demo target.
-prove-counter  Run the maintained end-to-end counter proof.
-cleanup        Stop only the recorded process tree and preserve evidence.
-```
-
-Run `node .agents/skills/verify-debug-electron-mcp/scripts/verify.mjs help` for the command synopsis.
+Update `.agents/verify-electron/profile.json` when the launch contract, target identity, or debug port changes. Update the project feature map in the same change whenever a user-visible entry point, selector, route, or expected result changes. Keep the reusable skill free of application-specific names and behavior.

@@ -288,10 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventLog();
 
   logEvent('🎯 All event listeners registered', 'success');
-  logEvent(
-    '📡 Ready for MCP Server commands on port 9222',
-    'info'
-  );
+  logEvent('📡 Ready for MCP Server commands', 'info');
 });
 
 // Global error handler

@@ -13,31 +13,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = path.resolve(SCRIPT_DIR, '..');
-const REPO_ROOT = path.resolve(SKILL_DIR, '..', '..', '..');
-const DEMO_ROOT = path.join(REPO_ROOT, 'examples', 'demo-app');
-const DIST_ENTRY = path.join(REPO_ROOT, 'dist', 'index.js');
-const WEBPACK_ENTRY = path.join(REPO_ROOT, 'node_modules', 'webpack', 'bin', 'webpack.js');
-const RUNS_ROOT = path.join(REPO_ROOT, '.verification', 'debug-electron-mcp');
-const DEBUG_PORT = 9222;
-const EXPECTED_TITLE = 'MCP Demo App';
-const REQUIRED_TOOLS = [
-  'get_electron_window_info',
-  'take_screenshot',
-  'send_command_to_electron',
-  'list_electron_windows',
-  'read_electron_logs',
-  'register_project',
-  'unregister_project',
-  'list_projects',
-];
+const SCRIPT_FILE = fileURLToPath(import.meta.url);
+const SKILL_DIR = path.resolve(path.dirname(SCRIPT_FILE), '..');
+const DEFAULT_REPO_ROOT = path.resolve(SKILL_DIR, '..', '..', '..');
+const DEFAULT_PROFILE = path.join('.agents', 'verify-electron', 'profile.json');
+const DEFAULT_EVIDENCE_ROOT = path.join('.verification', 'electron');
 
 function parseCli(argv) {
   const [command, ...tokens] = argv;
@@ -74,15 +57,168 @@ function requireString(options, key) {
 }
 
 function validateName(value, label) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(value)) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(value)) {
     throw new Error(`${label} must use letters, numbers, dots, underscores, or hyphens.`);
   }
   return value;
 }
 
-function getRunPaths(runId) {
+function asObject(value, label) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return value;
+}
+
+function asNonEmptyString(value, label) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function asRelativePath(value, label) {
+  const relativePath = asNonEmptyString(value, label);
+  if (path.isAbsolute(relativePath)) {
+    throw new Error(`${label} must be relative to the repository root.`);
+  }
+  return relativePath;
+}
+
+function resolveInside(root, relativePath, label) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, relativePath);
+  const relation = path.relative(resolvedRoot, resolvedPath);
+  if (relation === '..' || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) {
+    throw new Error(`${label} resolves outside the repository root.`);
+  }
+  return resolvedPath;
+}
+
+function resolveRepoRoot(options) {
+  if (typeof options.root === 'string') return path.resolve(process.cwd(), options.root);
+  return DEFAULT_REPO_ROOT;
+}
+
+function validateProfile(raw, repoRoot, profilePath) {
+  const profile = asObject(raw, 'profile');
+  if (profile.version !== 1) throw new Error('profile.version must be 1.');
+
+  const projectName = asNonEmptyString(profile.projectName, 'profile.projectName');
+  if (
+    projectName !== projectName.trim() ||
+    projectName.length > 100 ||
+    /[\u0000-\u001f\u007f]/.test(projectName)
+  ) {
+    throw new Error(
+      'profile.projectName must be at most 100 characters with no surrounding whitespace or control characters.',
+    );
+  }
+
+  const port = profile.port;
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('profile.port must be an integer from 1024 through 65535.');
+  }
+
+  const launch = asObject(profile.launch, 'profile.launch');
+  const command = asNonEmptyString(launch.command, 'profile.launch.command');
+  const args = launch.args ?? [];
+  if (!Array.isArray(args) || args.some((item) => typeof item !== 'string')) {
+    throw new Error('profile.launch.args must be an array of strings.');
+  }
+  const cwd = asRelativePath(launch.cwd ?? '.', 'profile.launch.cwd');
+  const launchCwd = resolveInside(repoRoot, cwd, 'profile.launch.cwd');
+  if (!existsSync(launchCwd) || !statSync(launchCwd).isDirectory()) {
+    throw new Error(`profile.launch.cwd does not exist: ${launchCwd}`);
+  }
+
+  const env = launch.env ?? {};
+  asObject(env, 'profile.launch.env');
+  if (
+    Object.entries(env).some(
+      ([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string',
+    )
+  ) {
+    throw new Error('profile.launch.env must map portable environment names to string values.');
+  }
+
+  const readyTimeoutMs = launch.readyTimeoutMs ?? 30000;
+  if (!Number.isInteger(readyTimeoutMs) || readyTimeoutMs < 1000 || readyTimeoutMs > 180000) {
+    throw new Error('profile.launch.readyTimeoutMs must be an integer from 1000 through 180000.');
+  }
+  if (
+    launch.stripElectronRunAsNode !== undefined &&
+    typeof launch.stripElectronRunAsNode !== 'boolean'
+  ) {
+    throw new Error('profile.launch.stripElectronRunAsNode must be a boolean.');
+  }
+
+  const target = asObject(profile.target, 'profile.target');
+  const title = target.title;
+  const titleIncludes = target.titleIncludes;
+  const urlIncludes = target.urlIncludes;
+  for (const [label, value] of [
+    ['profile.target.title', title],
+    ['profile.target.titleIncludes', titleIncludes],
+    ['profile.target.urlIncludes', urlIncludes],
+  ]) {
+    if (value !== undefined) asNonEmptyString(value, label);
+  }
+  if (title === undefined && titleIncludes === undefined && urlIncludes === undefined) {
+    throw new Error('profile.target requires title, titleIncludes, or urlIncludes.');
+  }
+
+  const evidenceRelative = asRelativePath(
+    profile.evidenceRoot ?? DEFAULT_EVIDENCE_ROOT,
+    'profile.evidenceRoot',
+  );
+  const evidenceRoot = resolveInside(repoRoot, evidenceRelative, 'profile.evidenceRoot');
+
+  return {
+    version: 1,
+    projectName,
+    port,
+    launch: {
+      command,
+      args,
+      cwd,
+      cwdPath: launchCwd,
+      env,
+      readyTimeoutMs,
+      stripElectronRunAsNode: launch.stripElectronRunAsNode !== false,
+    },
+    target: { title, titleIncludes, urlIncludes },
+    evidenceRelative,
+    evidenceRoot,
+    profilePath,
+  };
+}
+
+function loadContext(options) {
+  const repoRoot = resolveRepoRoot(options);
+  const profileRelative =
+    typeof options.profile === 'string'
+      ? asRelativePath(options.profile, '--profile')
+      : DEFAULT_PROFILE;
+  const profilePath = resolveInside(repoRoot, profileRelative, '--profile');
+  if (!existsSync(profilePath)) {
+    throw new Error(
+      `Missing ${profilePath}. Bootstrap .agents/verify-electron/profile.json from the skill instructions.`,
+    );
+  }
+
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(profilePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Could not parse ${profilePath}: ${error.message}`);
+  }
+  return { repoRoot, profile: validateProfile(raw, repoRoot, profilePath) };
+}
+
+function getRunPaths(profile, runId) {
   const safeRunId = validateName(runId, 'run-id');
-  const runDir = path.join(RUNS_ROOT, safeRunId);
+  const runDir = path.join(profile.evidenceRoot, safeRunId);
   return {
     runId: safeRunId,
     runDir,
@@ -95,16 +231,31 @@ function ensureRunDirs(paths) {
   mkdirSync(paths.evidenceDir, { recursive: true });
 }
 
+function writeJson(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 function readState(paths) {
   if (!existsSync(paths.statePath)) {
     throw new Error(`No active verification state for run ${paths.runId}. Launch it first.`);
   }
-  return JSON.parse(readFileSync(paths.statePath, 'utf8'));
+  let state;
+  try {
+    state = JSON.parse(readFileSync(paths.statePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Could not parse ${paths.statePath}: ${error.message}`);
+  }
+  if (!Number.isInteger(state.pid) || state.pid < 1) {
+    throw new Error(`State for run ${paths.runId} does not contain a valid PID.`);
+  }
+  return state;
 }
 
-function writeJson(filePath, value) {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+function safeEnvironment() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([, value]) => typeof value === 'string'),
+  );
 }
 
 function isPidAlive(pid) {
@@ -130,84 +281,126 @@ function isPortOpen(port) {
   });
 }
 
-async function readTargets() {
-  const response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`, {
+async function readTargets(port) {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
     signal: AbortSignal.timeout(1500),
   });
-  if (!response.ok) {
-    throw new Error(`CDP target request returned HTTP ${response.status}.`);
-  }
+  if (!response.ok) throw new Error(`CDP target request returned HTTP ${response.status}.`);
   const targets = await response.json();
-  if (!Array.isArray(targets)) {
-    throw new Error('CDP target response was not an array.');
-  }
+  if (!Array.isArray(targets)) throw new Error('CDP target response was not an array.');
   return targets;
 }
 
-function findDemoTarget(targets) {
-  return targets.find(
-    (target) =>
-      target?.type === 'page' &&
-      target?.title === EXPECTED_TITLE &&
-      !String(target?.url).startsWith('devtools://'),
-  );
+function publicTarget(target) {
+  return {
+    id: target?.id,
+    title: target?.title,
+    type: target?.type,
+    url: target?.url,
+  };
 }
 
-async function waitForDemoTarget(timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastError;
+function targetMatches(target, rules) {
+  if (target?.type !== 'page' || String(target?.url).startsWith('devtools://')) return false;
+  if (rules.title !== undefined && target?.title !== rules.title) return false;
+  if (
+    rules.titleIncludes !== undefined &&
+    !String(target?.title).toLowerCase().includes(rules.titleIncludes.toLowerCase())
+  ) {
+    return false;
+  }
+  if (rules.urlIncludes !== undefined && !String(target?.url).includes(rules.urlIncludes)) {
+    return false;
+  }
+  return true;
+}
 
+function selectTarget(targets, rules) {
+  const matches = targets.filter((target) => targetMatches(target, rules));
+  if (matches.length !== 1) {
+    const visible = targets
+      .filter((target) => target?.type === 'page' && !String(target?.url).startsWith('devtools://'))
+      .map(publicTarget);
+    throw new Error(
+      `Expected exactly one target matching the profile, found ${matches.length}. Visible targets: ${JSON.stringify(visible)}`,
+    );
+  }
+  return matches[0];
+}
+
+async function waitForTarget(profile) {
+  const deadline = Date.now() + profile.launch.readyTimeoutMs;
+  let lastError;
   while (Date.now() < deadline) {
     try {
-      const target = findDemoTarget(await readTargets());
-      if (target) return target;
+      return selectTarget(await readTargets(profile.port), profile.target);
     } catch (error) {
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-
   throw new Error(
-    `Demo target did not become ready on port ${DEBUG_PORT}.${lastError ? ` Last error: ${lastError.message}` : ''}`,
+    `Target did not become ready on port ${profile.port}.${lastError ? ` Last error: ${lastError.message}` : ''}`,
   );
 }
 
-function buildServer(logPath) {
-  if (!existsSync(WEBPACK_ENTRY)) {
-    throw new Error(`Missing ${WEBPACK_ENTRY}. Install root dependencies first.`);
-  }
-
-  const result = spawnSync(
-    process.execPath,
-    [WEBPACK_ENTRY, '--config', 'webpack.config.ts', '--mode', 'production'],
-    { cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true },
-  );
-  writeFileSync(logPath, `${result.stdout ?? ''}${result.stderr ?? ''}`, 'utf8');
-
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`Webpack failed with exit code ${result.status}. Read ${logPath}.`);
-  }
-  if (!existsSync(DIST_ENTRY)) {
-    throw new Error(`Build completed without creating ${DIST_ENTRY}.`);
+function assertInsideRoot(repoRoot, filePath, label) {
+  const relation = path.relative(path.resolve(repoRoot), path.resolve(filePath));
+  if (relation === '..' || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) {
+    throw new Error(`${label} resolves outside the repository root.`);
   }
 }
 
-function resolveElectronExecutable() {
-  const packagePath = path.join(DEMO_ROOT, 'package.json');
-  const requireFromDemo = createRequire(packagePath);
-  const executable = requireFromDemo('electron');
-  if (typeof executable !== 'string' || !existsSync(executable)) {
+function resolveLaunchCommand(command, cwd, args, repoRoot) {
+  const looksLikePath = command.includes('/') || command.includes('\\') || command.startsWith('.');
+  if (looksLikePath) {
+    const resolved = path.resolve(cwd, command);
+    const candidates = process.platform === 'win32'
+      ? [`${resolved}.exe`, `${resolved}.cmd`, `${resolved}.bat`, resolved]
+      : [resolved];
+    const match = candidates.find((candidate) => existsSync(candidate));
+    if (!match) throw new Error(`Launch command does not exist: ${resolved}`);
+    assertInsideRoot(repoRoot, match, 'profile.launch.command');
+    const shell = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(match);
+    if (shell) {
+      const relativeCommand = path.relative(cwd, match);
+      validateWindowsShellTokens([relativeCommand, ...args]);
+      return {
+        command: [relativeCommand, ...args].map(quoteWindowsShellToken).join(' '),
+        args: [],
+        shell: true,
+        displayCommand: match,
+      };
+    }
+    return { command: match, args, shell: false, displayCommand: match };
+  }
+  if (process.platform === 'win32' && ['npm', 'npx', 'pnpm', 'yarn'].includes(command)) {
+    validateWindowsShellTokens([command, ...args]);
+    return {
+      command: [`${command}.cmd`, ...args].map(quoteWindowsShellToken).join(' '),
+      args: [],
+      shell: true,
+      displayCommand: `${command}.cmd`,
+    };
+  }
+  return { command, args, shell: false, displayCommand: command };
+}
+
+function validateWindowsShellTokens(tokens) {
+  const unsafe = tokens.find((token) => /[&|<>^%!()"\r\n]/.test(token));
+  if (unsafe !== undefined) {
     throw new Error(
-      'The demo Electron executable is missing. Install examples/demo-app dependencies first.',
+      `Windows command wrappers do not accept shell metacharacters: ${unsafe}. Put complex logic in a repository-owned script.`,
     );
   }
-  return executable;
+}
+
+function quoteWindowsShellToken(token) {
+  return /\s/.test(token) ? `"${token}"` : token;
 }
 
 function killTrackedProcess(pid) {
   if (!isPidAlive(pid)) return { alreadyStopped: true };
-
   if (process.platform === 'win32') {
     const result = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
       encoding: 'utf8',
@@ -227,71 +420,87 @@ function killTrackedProcess(pid) {
   return { alreadyStopped: false };
 }
 
-async function launch(runId) {
-  const paths = getRunPaths(runId);
+async function waitForPortToClose(port, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isPortOpen(port))) return true;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
+async function launch(context, runId) {
+  const { profile } = context;
+  const paths = getRunPaths(profile, runId);
   ensureRunDirs(paths);
 
   if (existsSync(paths.statePath)) {
-    const oldState = JSON.parse(readFileSync(paths.statePath, 'utf8'));
-    if (isPidAlive(oldState.pid)) {
-      throw new Error(
-        `Run ${paths.runId} already owns live PID ${oldState.pid}. Clean it up first.`,
-      );
+    const previous = readState(paths);
+    if (isPidAlive(previous.pid)) {
+      throw new Error(`Run ${paths.runId} already owns live PID ${previous.pid}. Clean it up first.`);
     }
     rmSync(paths.statePath, { force: true });
   }
-
-  if (await isPortOpen(DEBUG_PORT)) {
+  if (await isPortOpen(profile.port)) {
     throw new Error(
-      `Port ${DEBUG_PORT} is already in use. Refusing to drive or stop an instance this run did not start.`,
+      `Port ${profile.port} is already in use. Refusing to drive or stop an instance this run did not start.`,
     );
   }
 
-  const buildLog = path.join(paths.evidenceDir, 'build.log');
-  buildServer(buildLog);
-  const demoLog = path.join(paths.evidenceDir, 'demo.log');
-  const logFd = openSync(demoLog, 'a');
-  const executable = resolveElectronExecutable();
-  const electronEnvironment = safeEnvironment();
-  delete electronEnvironment.ELECTRON_RUN_AS_NODE;
-  electronEnvironment.NODE_ENV = 'development';
-  const child = spawn(executable, [DEMO_ROOT, '--dev'], {
-    cwd: DEMO_ROOT,
+  const appLog = path.join(paths.evidenceDir, 'app.log');
+  const logFd = openSync(appLog, 'a');
+  const environment = { ...safeEnvironment(), ...profile.launch.env };
+  if (profile.launch.stripElectronRunAsNode) delete environment.ELECTRON_RUN_AS_NODE;
+  const invocation = resolveLaunchCommand(
+    profile.launch.command,
+    profile.launch.cwdPath,
+    profile.launch.args,
+    context.repoRoot,
+  );
+  const child = spawn(invocation.command, invocation.args, {
+    cwd: profile.launch.cwdPath,
     detached: true,
-    env: electronEnvironment,
+    env: environment,
+    shell: invocation.shell,
     stdio: ['ignore', logFd, logFd],
     windowsHide: true,
   });
   closeSync(logFd);
-
-  if (!child.pid) {
-    throw new Error('Electron did not return a process ID.');
-  }
+  await new Promise((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', reject);
+  });
+  if (!child.pid) throw new Error('The launch command did not return a process ID.');
   child.unref();
 
   const state = {
     runId: paths.runId,
     pid: child.pid,
-    port: DEBUG_PORT,
+    port: profile.port,
+    projectName: profile.projectName,
+    profilePath: profile.profilePath,
+    command: invocation.displayCommand,
+    args: profile.launch.args,
+    cwd: profile.launch.cwdPath,
     startedAt: new Date().toISOString(),
     portWasFreeBeforeLaunch: true,
-    demoRoot: DEMO_ROOT,
-    buildEntry: DIST_ENTRY,
   };
   writeJson(paths.statePath, state);
 
   try {
-    const target = await waitForDemoTarget();
+    const target = await waitForTarget(profile);
     const readyState = {
       ...state,
-      targetId: target.id,
-      targetTitle: target.title,
-      targetUrl: target.url,
+      target: publicTarget(target),
       readyAt: new Date().toISOString(),
     };
     writeJson(paths.statePath, readyState);
     console.log(
-      JSON.stringify({ status: 'ready', ...readyState, evidenceDir: paths.evidenceDir }, null, 2),
+      JSON.stringify(
+        { status: 'cdp-ready', ...readyState, evidenceDir: paths.evidenceDir },
+        null,
+        2,
+      ),
     );
   } catch (error) {
     killTrackedProcess(child.pid);
@@ -300,316 +509,95 @@ async function launch(runId) {
   }
 }
 
-function safeEnvironment() {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([, value]) => typeof value === 'string'),
-  );
-}
-
-async function withMcpClient(operation) {
-  if (!existsSync(DIST_ENTRY)) {
-    throw new Error(`Missing ${DIST_ENTRY}. Run launch to build the server.`);
+async function doctor(context, runId) {
+  const { profile } = context;
+  const paths = getRunPaths(profile, runId);
+  const state = readState(paths);
+  if (state.port !== profile.port || state.projectName !== profile.projectName) {
+    throw new Error('The active run state does not match the current project profile.');
   }
-
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [DIST_ENTRY],
-    cwd: path.parse(REPO_ROOT).root,
-    env: safeEnvironment(),
-    stderr: 'pipe',
-  });
-  let serverStderr = '';
-  transport.stderr?.on('data', (chunk) => {
-    serverStderr += chunk.toString();
-  });
-  const client = new Client({ name: 'verify-debug-electron-mcp', version: '1.0.0' });
-
-  try {
-    await client.connect(transport);
-    return await operation({ client, serverStderr: () => serverStderr });
-  } finally {
-    await client.close().catch(() => transport.close());
-  }
-}
-
-function resultText(result) {
-  if (!result || !Array.isArray(result.content)) return '';
-  return result.content
-    .filter((item) => item.type === 'text')
-    .map((item) => item.text)
-    .join('\n');
-}
-
-function assertToolSuccess(name, result) {
-  const text = resultText(result);
-  if (result?.isError) {
-    throw new Error(`${name} failed: ${text}`);
-  }
-  return text;
-}
-
-function sanitizeResult(result) {
-  if (!result || !Array.isArray(result.content)) return result;
-  return {
-    ...result,
-    content: result.content.map((item) =>
-      item.type === 'image'
-        ? { type: 'image', mimeType: item.mimeType, encodedCharacters: item.data.length }
-        : item,
-    ),
-  };
-}
-
-async function currentTarget(state) {
-  const target = findDemoTarget(await readTargets());
-  if (!target)
-    throw new Error(`The ${EXPECTED_TITLE} target is not available on port ${DEBUG_PORT}.`);
-  if (state.targetId && state.targetId !== target.id) {
-    return target;
-  }
-  return target;
-}
-
-async function buildDoctorReport(paths, state) {
-  if (!isPidAlive(state.pid)) {
-    throw new Error(`Tracked Electron PID ${state.pid} is not running.`);
-  }
-  const target = await currentTarget(state);
-
-  const mcp = await withMcpClient(async ({ client, serverStderr }) => {
-    const serverVersion = client.getServerVersion();
-    const listed = await client.listTools();
-    const windows = await client.callTool({ name: 'list_electron_windows', arguments: {} });
-    const windowText = assertToolSuccess('list_electron_windows', windows);
-    const toolNames = listed.tools.map((tool) => tool.name);
-    const missingTools = REQUIRED_TOOLS.filter((name) => !toolNames.includes(name));
-    if (missingTools.length > 0) {
-      throw new Error(`MCP server is missing tools: ${missingTools.join(', ')}`);
-    }
-    if (!windowText.includes(EXPECTED_TITLE) || !windowText.includes(`port: ${DEBUG_PORT}`)) {
-      throw new Error(
-        `MCP window discovery did not report ${EXPECTED_TITLE} on port ${DEBUG_PORT}.`,
-      );
-    }
-    return {
-      serverVersion,
-      toolNames,
-      windowResult: sanitizeResult(windows),
-      serverStderr: serverStderr(),
-    };
-  });
-
-  return {
-    status: 'healthy',
+  if (!isPidAlive(state.pid)) throw new Error(`Tracked PID ${state.pid} is not running.`);
+  const target = selectTarget(await readTargets(profile.port), profile.target);
+  const report = {
+    status: 'cdp-ready',
     checkedAt: new Date().toISOString(),
     runId: paths.runId,
+    projectName: profile.projectName,
     trackedPid: state.pid,
     pidAlive: true,
-    port: DEBUG_PORT,
+    port: profile.port,
     portWasFreeBeforeLaunch: state.portWasFreeBeforeLaunch,
-    target: { id: target.id, title: target.title, type: target.type, url: target.url },
-    authentication: 'not used by the local stdio and CDP verification path',
-    ...mcp,
+    target: publicTarget(target),
+    evidenceDir: paths.evidenceDir,
+    nextRequiredCheck: `Use Debug Electron MCP list_electron_windows with projectName=${profile.projectName} and confirm this target ID.`,
   };
-}
-
-async function doctor(runId) {
-  const paths = getRunPaths(runId);
-  const state = readState(paths);
-  const report = await buildDoctorReport(paths, state);
   writeJson(path.join(paths.evidenceDir, 'doctor.json'), report);
   console.log(JSON.stringify(report, null, 2));
 }
 
-async function callTool(runId, tool, rawArguments, evidenceName) {
-  const paths = getRunPaths(runId);
-  const state = readState(paths);
-  const target = await currentTarget(state);
-  let args;
-  try {
-    args = JSON.parse(rawArguments);
-  } catch (error) {
-    throw new Error(`--arguments must be valid JSON: ${error.message}`);
+async function probe(portValue) {
+  const port = Number(portValue);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('--port must be an integer from 1024 through 65535.');
   }
-  if (!args || Array.isArray(args) || typeof args !== 'object') {
-    throw new Error('--arguments must decode to a JSON object.');
-  }
-  if (
-    (tool === 'send_command_to_electron' || tool === 'take_screenshot') &&
-    !args.targetId &&
-    !args.windowTitle
-  ) {
-    args.targetId = target.id;
-  }
-
-  const result = await withMcpClient(({ client }) =>
-    client.callTool({ name: tool, arguments: args }),
-  );
-  assertToolSuccess(tool, result);
-  const record = {
-    calledAt: new Date().toISOString(),
-    runId: paths.runId,
-    tool,
-    arguments: args,
-    result: sanitizeResult(result),
-  };
-
-  if (evidenceName) {
-    const safeName = validateName(evidenceName, 'evidence');
-    writeJson(path.join(paths.evidenceDir, safeName), record);
-  }
-  console.log(JSON.stringify(record, null, 2));
+  const targets = (await readTargets(port)).map(publicTarget);
+  console.log(JSON.stringify({ status: 'reachable', port, targets }, null, 2));
 }
 
-function assertPng(filePath) {
+function evidencePath(context, runId, name) {
+  const paths = getRunPaths(context.profile, runId);
+  ensureRunDirs(paths);
+  const safeName = validateName(name, 'name');
+  console.log(path.join(paths.evidenceDir, safeName));
+}
+
+function assertPng(context, runId, name) {
+  const paths = getRunPaths(context.profile, runId);
+  const safeName = validateName(name, 'name');
+  if (!safeName.toLowerCase().endsWith('.png')) throw new Error('--name must end with .png.');
+  const filePath = path.join(paths.evidenceDir, safeName);
   if (!existsSync(filePath) || statSync(filePath).size < 8) {
     throw new Error(`Screenshot was not written to ${filePath}.`);
   }
   const signature = readFileSync(filePath).subarray(0, 8).toString('hex');
-  if (signature !== '89504e470d0a1a0a') {
-    throw new Error(`${filePath} is not a PNG file.`);
-  }
+  if (signature !== '89504e470d0a1a0a') throw new Error(`${filePath} is not a PNG file.`);
+  console.log(JSON.stringify({ status: 'valid-png', path: filePath, bytes: statSync(filePath).size }, null, 2));
 }
 
-async function screenshot(runId, name) {
-  const paths = getRunPaths(runId);
-  const state = readState(paths);
-  const target = await currentTarget(state);
+function record(context, runId, name, rawData) {
+  const paths = getRunPaths(context.profile, runId);
+  ensureRunDirs(paths);
   const safeName = validateName(name, 'name');
-  if (!safeName.endsWith('.png')) {
-    throw new Error('Screenshot --name must end with .png.');
+  if (!safeName.toLowerCase().endsWith('.json')) throw new Error('--name must end with .json.');
+  let data;
+  try {
+    data = JSON.parse(rawData);
+  } catch (error) {
+    throw new Error(`--data must be valid JSON: ${error.message}`);
   }
   const outputPath = path.join(paths.evidenceDir, safeName);
-  const result = await withMcpClient(({ client }) =>
-    client.callTool({
-      name: 'take_screenshot',
-      arguments: { targetId: target.id, outputPath },
-    }),
-  );
-  assertToolSuccess('take_screenshot', result);
-  assertPng(outputPath);
-  const record = {
-    capturedAt: new Date().toISOString(),
-    runId: paths.runId,
-    targetId: target.id,
-    outputPath,
-    result: sanitizeResult(result),
-  };
-  writeJson(path.join(paths.evidenceDir, `${safeName}.json`), record);
-  console.log(JSON.stringify(record, null, 2));
+  writeJson(outputPath, { recordedAt: new Date().toISOString(), runId: paths.runId, data });
+  console.log(JSON.stringify({ status: 'recorded', path: outputPath }, null, 2));
 }
 
-async function proveCounter(runId) {
-  const paths = getRunPaths(runId);
-  const state = readState(paths);
-  const doctorReport = await buildDoctorReport(paths, state);
-  writeJson(path.join(paths.evidenceDir, 'doctor.json'), doctorReport);
-  const target = await currentTarget(state);
-  const beforePath = path.join(paths.evidenceDir, 'counter-before.png');
-  const afterPath = path.join(paths.evidenceDir, 'counter-after.png');
-
-  const proof = await withMcpClient(async ({ client }) => {
-    const invoke = async (name, arguments_) => {
-      const result = await client.callTool({ name, arguments: arguments_ });
-      const text = assertToolSuccess(name, result);
-      return { text, result: sanitizeResult(result) };
-    };
-    const command = (commandName, args) =>
-      invoke('send_command_to_electron', { command: commandName, args, targetId: target.id });
-
-    const reset = await command('click_by_selector', { selector: '[data-testid="reset-button"]' });
-    const before = await command('eval', {
-      code: "document.getElementById('counter-value')?.textContent",
-    });
-    const beforeShot = await invoke('take_screenshot', {
-      targetId: target.id,
-      outputPath: beforePath,
-    });
-    const increment = await command('click_by_selector', {
-      selector: '[data-testid="increment-button"]',
-    });
-    const after = await command('eval', {
-      code: "document.getElementById('counter-value')?.textContent",
-    });
-    const eventLog = await command('eval', {
-      code: "document.getElementById('event-log')?.textContent",
-    });
-    const afterShot = await invoke('take_screenshot', {
-      targetId: target.id,
-      outputPath: afterPath,
-    });
-
-    if (!before.text.includes('"0"')) throw new Error(`Counter did not reset to 0: ${before.text}`);
-    if (!after.text.includes('"1"'))
-      throw new Error(`Counter did not increment to 1: ${after.text}`);
-    if (!eventLog.text.includes('Counter incremented to 1')) {
-      throw new Error(`Event log did not record the increment: ${eventLog.text}`);
-    }
-
-    return { reset, before, beforeShot, increment, after, eventLog, afterShot };
-  });
-
-  assertPng(beforePath);
-  assertPng(afterPath);
-  const transcript = {
-    feature: 'counter-state',
-    runId: paths.runId,
-    completedAt: new Date().toISOString(),
-    target: { id: target.id, title: target.title, url: target.url },
-    userPath: [
-      'Click the visible Reset Counter control through MCP.',
-      'Read the rendered counter value.',
-      'Capture the before state.',
-      'Click the visible + Increment control through MCP.',
-      'Read the rendered counter and event log.',
-      'Capture the resulting state.',
-    ],
-    screenshots: { before: beforePath, after: afterPath },
-    calls: proof,
-  };
-  writeJson(path.join(paths.evidenceDir, 'counter-proof.json'), transcript);
-  console.log(
-    JSON.stringify(
-      {
-        status: 'proved',
-        feature: 'counter-state',
-        evidence: path.join(paths.evidenceDir, 'counter-proof.json'),
-        screenshots: transcript.screenshots,
-      },
-      null,
-      2,
-    ),
-  );
-}
-
-async function waitForPortToClose(timeoutMs = 10000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!(await isPortOpen(DEBUG_PORT))) return true;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  return false;
-}
-
-async function cleanup(runId) {
-  const paths = getRunPaths(runId);
+async function cleanup(context, runId) {
+  const { profile } = context;
+  const paths = getRunPaths(profile, runId);
   ensureRunDirs(paths);
-  let state;
-  if (existsSync(paths.statePath)) {
-    state = JSON.parse(readFileSync(paths.statePath, 'utf8'));
+  const state = existsSync(paths.statePath) ? readState(paths) : undefined;
+  if (state && (state.port !== profile.port || state.projectName !== profile.projectName)) {
+    throw new Error('The active run state does not match the current project profile.');
   }
-
   const processResult = state
     ? killTrackedProcess(state.pid)
     : { alreadyStopped: true, noStateFile: true };
-  const portClosed = await waitForPortToClose();
+  const portClosed = await waitForPortToClose(profile.port);
   if (!portClosed) {
     throw new Error(
-      `Port ${DEBUG_PORT} is still open after stopping the tracked process. Do not kill any other process.`,
+      `Port ${profile.port} remains open after stopping the tracked process. Refusing to kill an untracked process.`,
     );
   }
   rmSync(paths.statePath, { force: true });
-  const evidenceFiles = existsSync(paths.evidenceDir) ? readdirSync(paths.evidenceDir).sort() : [];
   const report = {
     status: 'clean',
     cleanedAt: new Date().toISOString(),
@@ -618,53 +606,94 @@ async function cleanup(runId) {
     processResult,
     portClosed,
     evidenceDir: paths.evidenceDir,
-    evidenceFiles,
+    evidenceFiles: existsSync(paths.evidenceDir) ? readdirSync(paths.evidenceDir).sort() : [],
   };
   writeJson(path.join(paths.evidenceDir, 'cleanup.json'), report);
   console.log(JSON.stringify(report, null, 2));
 }
 
-function usage() {
+function showProfile(context) {
+  const { profile, repoRoot } = context;
+  console.log(
+    JSON.stringify(
+      {
+        status: 'valid-profile',
+        repoRoot,
+        profilePath: profile.profilePath,
+        projectName: profile.projectName,
+        port: profile.port,
+        launch: {
+          command: profile.launch.command,
+          args: profile.launch.args,
+          cwd: profile.launch.cwdPath,
+          readyTimeoutMs: profile.launch.readyTimeoutMs,
+        },
+        target: profile.target,
+        evidenceRoot: profile.evidenceRoot,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function usage(repoRoot = DEFAULT_REPO_ROOT) {
+  const script = path.relative(repoRoot, SCRIPT_FILE);
   console.log(`Usage:
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} launch --run-id <id>
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} doctor --run-id <id>
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} call --run-id <id> --tool <name> --arguments <json> [--evidence <file.json>]
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} screenshot --run-id <id> --name <file.png>
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} prove-counter --run-id <id>
-  node ${path.relative(REPO_ROOT, fileURLToPath(import.meta.url))} cleanup --run-id <id>`);
+  node ${script} profile [--root <repo>] [--profile <relative-path>]
+  node ${script} launch --run-id <id> [--root <repo>] [--profile <relative-path>]
+  node ${script} doctor --run-id <id> [--root <repo>] [--profile <relative-path>]
+  node ${script} evidence-path --run-id <id> --name <file>
+  node ${script} assert-png --run-id <id> --name <file.png>
+  node ${script} record --run-id <id> --name <file.json> (--data <json> | --stdin)
+  node ${script} cleanup --run-id <id>
+  node ${script} probe --port <port>`);
 }
 
 async function main() {
   const { command, options } = parseCli(process.argv.slice(2));
   if (!command || command === 'help' || options.help) {
-    usage();
+    usage(resolveRepoRoot(options));
+    return;
+  }
+  if (command === 'probe') {
+    await probe(requireString(options, 'port'));
+    return;
+  }
+
+  const context = loadContext(options);
+  if (command === 'profile') {
+    showProfile(context);
     return;
   }
   const runId = requireString(options, 'run-id');
 
   switch (command) {
     case 'launch':
-      await launch(runId);
+      await launch(context, runId);
       break;
     case 'doctor':
-      await doctor(runId);
+      await doctor(context, runId);
       break;
-    case 'call':
-      await callTool(
+    case 'evidence-path':
+      evidencePath(context, runId, requireString(options, 'name'));
+      break;
+    case 'assert-png':
+      assertPng(context, runId, requireString(options, 'name'));
+      break;
+    case 'record':
+      if (options.stdin && typeof options.data === 'string') {
+        throw new Error('Use either --data or --stdin, not both.');
+      }
+      record(
+        context,
         runId,
-        requireString(options, 'tool'),
-        requireString(options, 'arguments'),
-        typeof options.evidence === 'string' ? options.evidence : undefined,
+        requireString(options, 'name'),
+        options.stdin ? readFileSync(0, 'utf8') : requireString(options, 'data'),
       );
       break;
-    case 'screenshot':
-      await screenshot(runId, requireString(options, 'name'));
-      break;
-    case 'prove-counter':
-      await proveCounter(runId);
-      break;
     case 'cleanup':
-      await cleanup(runId);
+      await cleanup(context, runId);
       break;
     default:
       throw new Error(`Unknown command: ${command}`);
