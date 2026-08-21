@@ -120,7 +120,12 @@ export const commandSpecs = {
         duration: z.number().int().positive().max(30_000).optional(),
         timeout: z.number().int().positive().max(30_000).optional(),
       })
-      .strict(),
+      .strict()
+      .refine(
+        ({ selector, text, duration }) =>
+          selector !== undefined || text !== undefined || duration !== undefined,
+        'Specify a selector, text, or duration.',
+      ),
   },
 } as const satisfies Record<ElectronCommand, CommandSpec>;
 

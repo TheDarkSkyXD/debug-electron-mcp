@@ -1,7 +1,30 @@
 import WebSocket from 'ws';
-import type { DevToolsTarget, WindowTargetOptions } from '../../application/electron-automation';
+import type { WindowTargetOptions } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
+import type { DevToolsTarget } from './devtools-types';
 import { findMainTarget, scanForElectronApps } from './discovery';
+
+export interface CdpEvaluationResult {
+  readonly type: string;
+  readonly value?: unknown;
+  readonly description?: string;
+  readonly className?: string;
+  readonly objectId?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function isEvaluationResult(value: unknown): value is CdpEvaluationResult {
+  return (
+    isRecord(value) &&
+    typeof value.type === 'string' &&
+    (!('description' in value) || typeof value.description === 'string') &&
+    (!('className' in value) || typeof value.className === 'string') &&
+    (!('objectId' in value) || typeof value.objectId === 'string')
+  );
+}
 
 /**
  * Find and connect to a running Electron application.
@@ -89,7 +112,7 @@ export async function findElectronTarget(options?: WindowTargetOptions): Promise
 export async function executeInElectron(
   javascriptCode: string,
   target?: DevToolsTarget,
-): Promise<string> {
+): Promise<CdpEvaluationResult | undefined> {
   const targetInfo = target || (await findElectronTarget());
 
   const webSocketDebuggerUrl = targetInfo.webSocketDebuggerUrl;
@@ -97,7 +120,7 @@ export async function executeInElectron(
     throw new Error('No WebSocket debugger URL available');
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise<CdpEvaluationResult | undefined>((resolve, reject) => {
     const ws = new WebSocket(webSocketDebuggerUrl);
     const runtimeEnableMessageId = 1;
     const messageId = 2;
@@ -135,7 +158,8 @@ export async function executeInElectron(
 
     ws.on('message', (data) => {
       try {
-        const response = JSON.parse(data.toString());
+        const response: unknown = JSON.parse(data.toString());
+        if (!isRecord(response)) return;
 
         // Filter out noisy CDP events to reduce log spam
         const FILTERED_CDP_METHODS = [
@@ -149,7 +173,7 @@ export async function executeInElectron(
         // Only log CDP events if debug level is enabled and they're not filtered
         if (
           logger.isEnabled(3) &&
-          (!response.method || !FILTERED_CDP_METHODS.includes(response.method))
+          (typeof response.method !== 'string' || !FILTERED_CDP_METHODS.includes(response.method))
         ) {
           logger.debug(`CDP Response for message ${messageId}:`, JSON.stringify(response, null, 2));
         }
@@ -158,43 +182,24 @@ export async function executeInElectron(
           clearTimeout(timeout);
           ws.close();
 
-          if (response.error) {
+          if (isRecord(response.error)) {
+            const message =
+              typeof response.error.message === 'string'
+                ? response.error.message
+                : 'Unknown protocol error';
             logger.error(`DevTools Protocol error:`, response.error);
-            reject(new Error(`DevTools Protocol error: ${response.error.message}`));
-          } else if (response.result) {
+            reject(new Error(`DevTools Protocol error: ${message}`));
+          } else if (isRecord(response.result) && 'result' in response.result) {
             const result = response.result.result;
-            logger.debug(`Execution result type: ${result?.type}, value:`, result?.value);
-
-            if (result.type === 'string') {
-              resolve(`Command executed: ${result.value}`);
-            } else if (result.type === 'number') {
-              resolve(`Result: ${result.value}`);
-            } else if (result.type === 'boolean') {
-              resolve(`Result: ${result.value}`);
-            } else if (result.type === 'undefined') {
-              resolve(`Command executed successfully`);
-            } else if (result.type === 'object') {
-              if (result.value === null) {
-                resolve(`Result: null`);
-              } else if (result.value === undefined) {
-                resolve(`Result: undefined`);
-              } else {
-                try {
-                  resolve(`Result: ${JSON.stringify(result.value, null, 2)}`);
-                } catch {
-                  resolve(
-                    `Result: [Object - could not serialize: ${
-                      result.className || result.objectId || 'unknown'
-                    }]`,
-                  );
-                }
-              }
-            } else {
-              resolve(`Result type ${result.type}: ${result.description || 'no description'}`);
+            if (!isEvaluationResult(result)) {
+              reject(new Error('DevTools Protocol returned a malformed evaluation result'));
+              return;
             }
+            logger.debug(`Execution result type: ${result.type}, value:`, result.value);
+            resolve(result);
           } else {
             logger.debug(`No result in response:`, response);
-            resolve(`Command sent successfully`);
+            resolve(undefined);
           }
         }
       } catch (error) {

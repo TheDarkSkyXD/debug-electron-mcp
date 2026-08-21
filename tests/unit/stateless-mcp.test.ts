@@ -30,6 +30,19 @@ describe('stateless MCP migration seams', () => {
     expect(apps.map(({ port }) => port)).toEqual([9222, 9223, 9224]);
   });
 
+  it('rejects malformed optional fields at the DevTools boundary', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([{ id: 'target-1', type: 'page', title: 42 }]), {
+          status: 200,
+        }),
+      ),
+    );
+
+    await expect(scanForElectronApps([9222])).resolves.toEqual([]);
+  });
+
   it('keeps every runtime command option through command-specific validation', () => {
     expect(parseElectronCommand('drag', { startSelector: '#source', endSelector: '#target' }))
       .toEqual({
@@ -40,6 +53,9 @@ describe('stateless MCP migration seams', () => {
       command: 'wait',
       args: { duration: 25, timeout: 100 },
     });
+    expect(() => parseElectronCommand('wait', {})).toThrow(
+      'Specify a selector, text, or duration.',
+    );
     expect(parseElectronCommand('type', { text: 'hello', slowly: false })).toEqual({
       command: 'type',
       args: { text: 'hello', slowly: false },
@@ -57,5 +73,15 @@ describe('stateless MCP migration seams', () => {
 
     expect(rendererCode).toContain('#source');
     expect(rendererCode).toContain('#target');
+  });
+
+  it('rejects dangerous renderer input instead of compiling it as JavaScript', () => {
+    const request = parseElectronCommand('click_by_selector', {
+      selector: 'javascript:alert(1)',
+    });
+
+    expect(() => buildRendererCommand(request)).toThrow(
+      'Invalid selector: contains dangerous content',
+    );
   });
 });

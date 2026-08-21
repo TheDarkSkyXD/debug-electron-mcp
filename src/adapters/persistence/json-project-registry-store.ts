@@ -3,10 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
-import type {
-  ProjectRegistryStore,
-  RegistryConfig,
-} from '../../application/project-registry';
+import type { ProjectRegistryStore, RegistryConfig } from '../../application/project-registry';
 import { logger } from '../../shared/logger';
 
 const registryConfigSchema = z.object({
@@ -29,9 +26,7 @@ function isMissingFile(error: unknown): boolean {
 }
 
 export class JsonProjectRegistryStore implements ProjectRegistryStore {
-  constructor(
-    private readonly configPath = path.join(os.homedir(), CONFIG_FILENAME),
-  ) {}
+  constructor(private readonly configPath = path.join(os.homedir(), CONFIG_FILENAME)) {}
 
   load(): RegistryConfig | undefined {
     try {

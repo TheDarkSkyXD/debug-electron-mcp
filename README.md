@@ -97,3 +97,5 @@ npm run verify:mcp
 Type-checking and every production build use the native TypeScript 7 compiler. The `typescript` package name intentionally points to the official TypeScript 6 compatibility package for tools such as `typescript-eslint` and `ts-loader`, which still require the compiler API that TypeScript 7 does not expose.
 
 The source follows enforced responsibility boundaries: transports depend on application ports, Electron and filesystem code live in adapters, and `src/index.ts` composes them. See [ADR 0002](docs/adr/0002-enforce-responsibility-boundaries.md) for the dependency rules and context-budget decision.
+
+See the [stateless architecture modernization report](docs/reports/2026-08-21-stateless-architecture-modernization.md) for measured context, response-time, build, dependency, and verification results.

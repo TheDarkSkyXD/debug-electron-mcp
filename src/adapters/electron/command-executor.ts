@@ -1,33 +1,56 @@
 import type { ElectronCommandRequest } from '../../application/commands';
 import type { WindowTargetOptions } from '../../application/electron-automation';
-import { executeInElectron, findElectronTarget } from './cdp-connection';
+import { executeInElectron, findElectronTarget, type CdpEvaluationResult } from './cdp-connection';
 import { buildRendererCommand } from './renderer-command-builder';
 
-function formatEvaluationResult(rawResult: string): string | undefined {
-  try {
-    const result: unknown = JSON.parse(rawResult);
-    if (result === null || typeof result !== 'object' || !('success' in result)) return undefined;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
 
-    if (!result.success) {
-      const error = 'error' in result ? String(result.error) : 'Unknown evaluation error';
-      const stack = 'stack' in result && result.stack ? `\nStack: ${String(result.stack)}` : '';
-      return `Command failed: ${error}${stack}`;
-    }
-    const value = 'result' in result ? result.result : undefined;
-    return `Command successful${value == null ? '' : `: ${JSON.stringify(value)}`}`;
+function serialize(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
   } catch {
-    return undefined;
+    return String(value);
   }
 }
 
-function formatCommandResult(rawResult: string): string {
-  if (rawResult === 'undefined' || rawResult === 'null' || rawResult === '') {
-    return (
-      `Warning: Command executed but returned ${rawResult || 'empty'} ` +
-      "- this may indicate the element wasn't found or the action failed"
-    );
+function formatEvaluationResult(evaluation: CdpEvaluationResult | undefined): string | undefined {
+  if (!evaluation || !isRecord(evaluation.value) || !('success' in evaluation.value)) {
+    return undefined;
   }
-  return `Result: ${rawResult}`;
+
+  if (evaluation.value.success !== true) {
+    const error = 'error' in evaluation.value ? String(evaluation.value.error) : 'Unknown error';
+    const stack =
+      'stack' in evaluation.value && evaluation.value.stack
+        ? `\nStack: ${String(evaluation.value.stack)}`
+        : '';
+    return `Command failed: ${error}${stack}`;
+  }
+
+  const value = 'result' in evaluation.value ? evaluation.value.result : undefined;
+  return `Command successful${value == null ? '' : `: ${serialize(value)}`}`;
+}
+
+function formatCommandResult(result: CdpEvaluationResult | undefined): string {
+  if (!result) return 'Command sent successfully';
+
+  switch (result.type) {
+    case 'string':
+      return `Command executed: ${String(result.value)}`;
+    case 'number':
+    case 'boolean':
+      return `Result: ${String(result.value)}`;
+    case 'undefined':
+      return 'Command executed successfully';
+    case 'object':
+      if (result.value === null) return 'Result: null';
+      if (result.value === undefined) return 'Result: undefined';
+      return `Result: ${serialize(result.value)}`;
+    default:
+      return `Result type ${result.type}: ${result.description ?? 'no description'}`;
+  }
 }
 
 export async function sendCommandToElectron(
@@ -35,12 +58,13 @@ export async function sendCommandToElectron(
   windowOptions?: WindowTargetOptions,
 ): Promise<string> {
   try {
+    const rendererCommand = buildRendererCommand(request);
     const target = await findElectronTarget(windowOptions);
-    const rawResult = await executeInElectron(buildRendererCommand(request), target);
+    const evaluation = await executeInElectron(rendererCommand, target);
     if (request.command === 'eval') {
-      return formatEvaluationResult(rawResult) ?? formatCommandResult(rawResult);
+      return formatEvaluationResult(evaluation) ?? formatCommandResult(evaluation);
     }
-    return formatCommandResult(rawResult);
+    return formatCommandResult(evaluation);
   } catch (error) {
     throw new Error(
       `Failed to send command: ${error instanceof Error ? error.message : String(error)}`,

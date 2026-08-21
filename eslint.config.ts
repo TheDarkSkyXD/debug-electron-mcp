@@ -113,8 +113,25 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['playwright', 'playwright/**', 'ws', 'ws/**'],
-              message: 'Platform SDKs belong in an Electron adapter.',
+              group: [
+                'playwright',
+                'playwright/**',
+                'ws',
+                'ws/**',
+                'fs',
+                'fs/**',
+                'node:fs',
+                'node:fs/**',
+                'os',
+                'node:os',
+                'path',
+                'path/**',
+                'node:path',
+                'node:path/**',
+                'child_process',
+                'node:child_process',
+              ],
+              message: 'Platform APIs belong behind an application-owned adapter.',
             },
           ],
         },
@@ -122,12 +139,22 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*'],
+    files: ['src/adapters/persistence/**/*.ts'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      'no-console': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['playwright', 'playwright/**', 'ws', 'ws/**'],
+              message: 'Electron SDKs belong in an Electron adapter.',
+            },
+          ],
+        },
+      ],
     },
   },
+  { files: ['tests/**/*'], rules: { 'no-console': 'off' } },
   {
     files: ['scripts/**/*'],
     rules: { 'no-console': 'off' },

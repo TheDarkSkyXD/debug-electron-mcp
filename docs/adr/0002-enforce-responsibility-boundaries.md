@@ -34,8 +34,12 @@ Transport behavior can be tested with in-memory application ports. Electron and 
 
 The measured `tools/list` response is 5,223 bytes, approximately 1,306 tokens. That is 45.3 percent fewer estimated tokens than the 9,543-byte, 2,386-token baseline. A caller pays for an exact command schema only when it invokes `describe_electron_command`.
 
+The application-facing window result omits the CDP WebSocket URL, operating-system process data, and duplicate target counts. The smaller result exposes only data that MCP tools use. Removing the process scan also avoids one subprocess from each window-information call.
+
 The source tree has more directories, but each directory states its responsibility and dependency direction. The large renderer switch remains intentionally centralized as a pure command compiler; CDP connection management no longer shares that module.
 
 ## Verification
 
 `npm run lint` proves the allowed dependency graph and rejects a synthetic application-to-adapter import. `npm run typecheck` validates the discriminated command union with TypeScript 7. Unit and integration tests cover command parsing and generation, registry persistence, Electron operations, and stateless HTTP behavior. `npm run verify:mcp` and `npm run measure:mcp` exercise the built server and report protocol and context-size evidence.
+
+The final local HTTP benchmark measured p95 response times below 5 ms for `server/discover`, `tools/list`, and `tools/call describe_electron_command`. These values cover server and loopback HTTP overhead, not renderer execution time.

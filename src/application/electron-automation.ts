@@ -1,17 +1,8 @@
 import type { ElectronCommandRequest } from './commands';
 
-export interface ElectronAppInfo {
+export interface DiscoveredElectronApp {
   readonly port: number;
-  readonly targets: readonly DevToolsTarget[];
-}
-
-export interface DevToolsTarget {
-  readonly id: string;
-  readonly title?: string;
-  readonly url?: string;
-  readonly type: string;
-  readonly description?: string;
-  readonly webSocketDebuggerUrl?: string;
+  readonly windowCount: number;
 }
 
 export interface WindowInfo {
@@ -20,7 +11,6 @@ export interface WindowInfo {
   readonly url: string;
   readonly type: string;
   readonly description: string;
-  readonly webSocketDebuggerUrl: string;
 }
 
 export interface ElectronWindowTarget {
@@ -32,12 +22,7 @@ export interface ElectronWindowTarget {
 }
 
 export interface ElectronWindowResult {
-  readonly platform: string;
-  readonly devToolsPort?: number;
   readonly windows: readonly WindowInfo[];
-  readonly totalTargets: number;
-  readonly electronTargets: number;
-  readonly processInfo?: unknown;
   readonly message: string;
   readonly automationReady: boolean;
 }
@@ -60,7 +45,7 @@ export type ScreenshotResult =
 export type LogType = 'console' | 'main' | 'renderer' | 'all';
 
 export interface ElectronAutomation {
-  discover(ports?: readonly number[]): Promise<readonly ElectronAppInfo[]>;
+  discover(ports?: readonly number[]): Promise<readonly DiscoveredElectronApp[]>;
   getWindowInfo(input: {
     readonly includeChildren: boolean;
     readonly ports?: readonly number[];

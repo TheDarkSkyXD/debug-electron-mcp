@@ -1,13 +1,10 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import type {
-  DevToolsTarget,
-  ElectronAppInfo,
   ElectronWindowResult,
   ElectronWindowTarget,
   WindowInfo,
 } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
+import type { DevToolsTarget, ElectronAppInfo } from './devtools-types';
 
 /**
  * Scan for running Electron applications with DevTools enabled
@@ -21,13 +18,18 @@ const DEFAULT_PORTS = [
 const DISCOVERY_CONCURRENCY = 6;
 
 function isDevToolsTarget(value: unknown): value is DevToolsTarget {
+  if (value === null || typeof value !== 'object') return false;
+  const target = value;
+
   return (
-    value !== null &&
-    typeof value === 'object' &&
-    'id' in value &&
-    typeof value.id === 'string' &&
-    'type' in value &&
-    typeof value.type === 'string'
+    'id' in target &&
+    typeof target.id === 'string' &&
+    'type' in target &&
+    typeof target.type === 'string' &&
+    (!('title' in target) || typeof target.title === 'string') &&
+    (!('url' in target) || typeof target.url === 'string') &&
+    (!('description' in target) || typeof target.description === 'string') &&
+    (!('webSocketDebuggerUrl' in target) || typeof target.webSocketDebuggerUrl === 'string')
   );
 }
 
@@ -73,38 +75,6 @@ export async function scanForElectronApps(ports?: readonly number[]): Promise<El
       ...app,
       targets: [...app.targets].sort((left, right) => left.id.localeCompare(right.id)),
     }));
-}
-
-/**
- * Get detailed process information for running Electron applications
- */
-export async function getElectronProcessInfo(): Promise<Record<string, unknown>> {
-  const execAsync = promisify(exec);
-
-  try {
-    const { stdout } = await execAsync(
-      "ps aux | grep -i electron | grep -v grep | grep -v 'Visual Studio Code'",
-    );
-
-    const electronProcesses = stdout
-      .trim()
-      .split('\n')
-      .filter((line) => line.includes('electron'))
-      .map((line) => {
-        const parts = line.trim().split(/\s+/);
-        return {
-          pid: parts[1],
-          cpu: parts[2],
-          memory: parts[3],
-          command: parts.slice(10).join(' '),
-        };
-      });
-
-    return { electronProcesses };
-  } catch (error) {
-    logger.debug('Could not get process info:', error);
-    return {};
-  }
 }
 
 /**
@@ -164,10 +134,7 @@ export async function getElectronWindowInfo(
 
     if (foundApps.length === 0) {
       return {
-        platform: process.platform,
         windows: [],
-        totalTargets: 0,
-        electronTargets: 0,
         message: 'No Electron applications found with remote debugging enabled',
         automationReady: false,
       };
@@ -181,31 +148,19 @@ export async function getElectronWindowInfo(
       url: target.url ?? '',
       type: target.type,
       description: target.description || '',
-      webSocketDebuggerUrl: target.webSocketDebuggerUrl ?? '',
     }));
 
-    // Get additional process information
-    const processInfo = await getElectronProcessInfo();
-
     return {
-      platform: process.platform,
-      devToolsPort: app.port,
       windows: includeChildren
         ? windows
         : windows.filter((w: WindowInfo) => !w.title.includes('DevTools')),
-      totalTargets: windows.length,
-      electronTargets: windows.length,
-      processInfo,
       message: `Found running Electron application with ${windows.length} windows on port ${app.port}`,
       automationReady: true,
     };
   } catch (error) {
     logger.error('Failed to scan for applications:', error);
     return {
-      platform: process.platform,
       windows: [],
-      totalTargets: 0,
-      electronTargets: 0,
       message: `Failed to scan for Electron applications: ${
         error instanceof Error ? error.message : String(error)
       }`,

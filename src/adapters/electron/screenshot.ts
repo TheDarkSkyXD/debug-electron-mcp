@@ -2,12 +2,9 @@ import { chromium } from 'playwright';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import type {
-  DevToolsTarget,
-  ScreenshotOptions,
-  ScreenshotResult,
-} from '../../application/electron-automation';
+import type { ScreenshotOptions, ScreenshotResult } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
+import type { DevToolsTarget } from './devtools-types';
 import { scanForElectronApps } from './discovery';
 
 /**

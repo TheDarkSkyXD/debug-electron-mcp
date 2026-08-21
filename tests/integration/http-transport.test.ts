@@ -13,10 +13,7 @@ function createTestServer() {
   const automation: ElectronAutomation = {
     discover: async () => [],
     getWindowInfo: async () => ({
-      platform: process.platform,
       windows: [],
-      totalTargets: 0,
-      electronTargets: 0,
       message: 'No Electron applications found',
       automationReady: false,
     }),

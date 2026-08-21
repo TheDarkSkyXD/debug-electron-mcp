@@ -1,5 +1,8 @@
 import type { ElectronCommandRequest } from '../../application/commands';
-import { generateFindElementsCommand, generateClickByTextCommand } from './renderer-command-scripts';
+import {
+  generateFindElementsCommand,
+  generateClickByTextCommand,
+} from './renderer-command-scripts';
 import {
   generateFillInputCommand,
   generateSelectOptionCommand,
@@ -11,27 +14,27 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
   const { command, args } = request;
 
   switch (command) {
-      case 'get_title':
-        javascriptCode = 'document.title';
-        break;
+    case 'get_title':
+      javascriptCode = 'document.title';
+      break;
 
-      case 'get_url':
-        javascriptCode = 'window.location.href';
-        break;
+    case 'get_url':
+      javascriptCode = 'window.location.href';
+      break;
 
-      case 'get_body_text':
-        javascriptCode = 'document.body.innerText.substring(0, 500)';
-        break;
+    case 'get_body_text':
+      javascriptCode = 'document.body.innerText.substring(0, 500)';
+      break;
 
-      case 'click_button':
-        // Validate and escape selector input
-        const selector = args?.selector || 'button';
-        if (selector.includes('javascript:') || selector.includes('<script')) {
-          return 'Invalid selector: contains dangerous content';
-        }
-        const escapedSelector = JSON.stringify(selector);
+    case 'click_button':
+      // Validate and escape selector input
+      const selector = args?.selector || 'button';
+      if (selector.includes('javascript:') || selector.includes('<script')) {
+        throw new Error('Invalid selector: contains dangerous content');
+      }
+      const escapedSelector = JSON.stringify(selector);
 
-        javascriptCode = `
+      javascriptCode = `
           const button = document.querySelector(${escapedSelector});
           if (button && !button.disabled) {
             // Enhanced duplicate prevention
@@ -70,35 +73,35 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
           }
           return 'Button not found or disabled';
         `;
-        break;
+      break;
 
-      case 'find_elements':
-        javascriptCode = generateFindElementsCommand();
-        break;
+    case 'find_elements':
+      javascriptCode = generateFindElementsCommand();
+      break;
 
-      case 'click_by_text':
-        const clickText = args?.text || '';
-        if (!clickText) {
-          return 'ERROR: Missing text. Use: {"text": "button text"}. See MCP_USAGE_GUIDE.md for examples.';
-        }
-        javascriptCode = generateClickByTextCommand(clickText);
-        break;
+    case 'click_by_text':
+      const clickText = args?.text || '';
+      if (!clickText) {
+        throw new Error('Missing text for click_by_text');
+      }
+      javascriptCode = generateClickByTextCommand(clickText);
+      break;
 
-      case 'click_by_selector':
-        // Secure selector-based clicking
-        const clickSelector = args?.selector || '';
+    case 'click_by_selector':
+      // Secure selector-based clicking
+      const clickSelector = args?.selector || '';
 
-        // Better error message for common mistake
-        if (!clickSelector) {
-          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}. See MCP_USAGE_GUIDE.md for examples.';
-        }
+      // Better error message for common mistake
+      if (!clickSelector) {
+        throw new Error('Missing selector for click_by_selector');
+      }
 
-        if (clickSelector.includes('javascript:') || clickSelector.includes('<script')) {
-          return 'Invalid selector: contains dangerous content';
-        }
-        const escapedClickSelector = JSON.stringify(clickSelector);
+      if (clickSelector.includes('javascript:') || clickSelector.includes('<script')) {
+        throw new Error('Invalid selector: contains dangerous content');
+      }
+      const escapedClickSelector = JSON.stringify(clickSelector);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const element = document.querySelector(${escapedClickSelector});
@@ -134,86 +137,86 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'send_keyboard_shortcut':
-        // Secure keyboard shortcut sending
-        const key = args?.text || '';
-        const validKeys = [
-          'Enter',
-          'Escape',
-          'Tab',
-          'Space',
-          'ArrowUp',
-          'ArrowDown',
-          'ArrowLeft',
-          'ArrowRight',
-        ];
+    case 'send_keyboard_shortcut':
+      // Secure keyboard shortcut sending
+      const key = args?.text || '';
+      const validKeys = [
+        'Enter',
+        'Escape',
+        'Tab',
+        'Space',
+        'ArrowUp',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowRight',
+      ];
 
-        // Parse shortcut like "Ctrl+N" or "Meta+N"
-        const parts = key.split('+').map((p) => p.trim());
-        const keyPart = parts[parts.length - 1];
-        const modifiers = parts.slice(0, -1);
+      // Parse shortcut like "Ctrl+N" or "Meta+N"
+      const parts = key.split('+').map((p) => p.trim());
+      const keyPart = parts[parts.length - 1];
+      const modifiers = parts.slice(0, -1);
 
-        // Helper function to get proper KeyboardEvent.code value
-        function getKeyCode(key: string): string {
-          // Special keys mapping
-          const specialKeys: Record<string, string> = {
-            Enter: 'Enter',
-            Escape: 'Escape',
-            Tab: 'Tab',
-            Space: 'Space',
-            ArrowUp: 'ArrowUp',
-            ArrowDown: 'ArrowDown',
-            ArrowLeft: 'ArrowLeft',
-            ArrowRight: 'ArrowRight',
-            Backspace: 'Backspace',
-            Delete: 'Delete',
-            Home: 'Home',
-            End: 'End',
-            PageUp: 'PageUp',
-            PageDown: 'PageDown',
-          };
+      // Helper function to get proper KeyboardEvent.code value
+      function getKeyCode(key: string): string {
+        // Special keys mapping
+        const specialKeys: Record<string, string> = {
+          Enter: 'Enter',
+          Escape: 'Escape',
+          Tab: 'Tab',
+          Space: 'Space',
+          ArrowUp: 'ArrowUp',
+          ArrowDown: 'ArrowDown',
+          ArrowLeft: 'ArrowLeft',
+          ArrowRight: 'ArrowRight',
+          Backspace: 'Backspace',
+          Delete: 'Delete',
+          Home: 'Home',
+          End: 'End',
+          PageUp: 'PageUp',
+          PageDown: 'PageDown',
+        };
 
-          if (specialKeys[key]) {
-            return specialKeys[key];
-          }
-
-          // Single character keys
-          if (key.length === 1) {
-            const upperKey = key.toUpperCase();
-            if (upperKey >= 'A' && upperKey <= 'Z') {
-              return `Key${upperKey}`;
-            }
-            if (upperKey >= '0' && upperKey <= '9') {
-              return `Digit${upperKey}`;
-            }
-          }
-
-          return `Key${key.toUpperCase()}`;
+        if (specialKeys[key]) {
+          return specialKeys[key];
         }
 
-        if (keyPart.length === 1 || validKeys.includes(keyPart)) {
-          const modifierProps = modifiers
-            .map((mod) => {
-              switch (mod.toLowerCase()) {
-                case 'ctrl':
-                  return 'ctrlKey: true';
-                case 'shift':
-                  return 'shiftKey: true';
-                case 'alt':
-                  return 'altKey: true';
-                case 'meta':
-                case 'cmd':
-                  return 'metaKey: true';
-                default:
-                  return '';
-              }
-            })
-            .filter(Boolean)
-            .join(', ');
+        // Single character keys
+        if (key.length === 1) {
+          const upperKey = key.toUpperCase();
+          if (upperKey >= 'A' && upperKey <= 'Z') {
+            return `Key${upperKey}`;
+          }
+          if (upperKey >= '0' && upperKey <= '9') {
+            return `Digit${upperKey}`;
+          }
+        }
 
-          javascriptCode = `
+        return `Key${key.toUpperCase()}`;
+      }
+
+      if (keyPart.length === 1 || validKeys.includes(keyPart)) {
+        const modifierProps = modifiers
+          .map((mod) => {
+            switch (mod.toLowerCase()) {
+              case 'ctrl':
+                return 'ctrlKey: true';
+              case 'shift':
+                return 'shiftKey: true';
+              case 'alt':
+                return 'altKey: true';
+              case 'meta':
+              case 'cmd':
+                return 'metaKey: true';
+              default:
+                return '';
+            }
+          })
+          .filter(Boolean)
+          .join(', ');
+
+        javascriptCode = `
             (function() {
               try {
                 const event = new KeyboardEvent('keydown', {
@@ -230,31 +233,32 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
               }
             })();
           `;
-        } else {
-          return `Invalid keyboard shortcut: ${key}`;
-        }
-        break;
+      } else {
+        throw new Error(`Invalid keyboard shortcut: ${key}`);
+      }
+      break;
 
-      case 'navigate_to_hash':
-        // Secure hash navigation
-        const hash = args?.text || '';
-        if (hash.includes('javascript:') || hash.includes('<script') || hash.includes('://')) {
-          return 'Invalid hash: contains dangerous content';
-        }
-        const cleanHash = hash.startsWith('#') ? hash : '#' + hash;
+    case 'navigate_to_hash':
+      // Secure hash navigation
+      const hash = args?.text || '';
+      if (hash.includes('javascript:') || hash.includes('<script') || hash.includes('://')) {
+        throw new Error('Invalid hash: contains dangerous content');
+      }
+      const cleanHash = hash.startsWith('#') ? hash : '#' + hash;
+      const escapedHash = JSON.stringify(cleanHash);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               // Use pushState for safer navigation
               if (window.history && window.history.pushState) {
-                const newUrl = window.location.pathname + window.location.search + '${cleanHash}';
+                const newUrl = window.location.pathname + window.location.search + ${escapedHash};
                 window.history.pushState({}, '', newUrl);
                 
                 // Trigger hashchange event for React Router
                 window.dispatchEvent(new HashChangeEvent('hashchange', {
                   newURL: window.location.href,
-                  oldURL: window.location.href.replace('${cleanHash}', '')
+                  oldURL: window.location.href.replace(${escapedHash}, '')
                 }));
                 
                 return 'Navigated to hash: ${cleanHash}';
@@ -268,34 +272,34 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'fill_input':
-        const inputValue = args?.value || args?.text || '';
-        if (!inputValue) {
-          return 'ERROR: Missing value. Use: {"value": "text", "selector": "..."} or {"value": "text", "placeholder": "..."}. See MCP_USAGE_GUIDE.md for examples.';
-        }
-        javascriptCode = generateFillInputCommand(
-          args?.selector || '',
-          inputValue,
-          args?.text || args?.placeholder || '',
-        );
-        break;
+    case 'fill_input':
+      const inputValue = args?.value || args?.text || '';
+      if (!inputValue) {
+        throw new Error('Missing value for fill_input');
+      }
+      javascriptCode = generateFillInputCommand(
+        args?.selector || '',
+        inputValue,
+        args?.text || args?.placeholder || '',
+      );
+      break;
 
-      case 'select_option':
-        javascriptCode = generateSelectOptionCommand(
-          args?.selector || '',
-          args?.value || '',
-          args?.text || '',
-        );
-        break;
+    case 'select_option':
+      javascriptCode = generateSelectOptionCommand(
+        args?.selector || '',
+        args?.value || '',
+        args?.text || '',
+      );
+      break;
 
-      case 'get_page_structure':
-        javascriptCode = generatePageStructureCommand();
-        break;
+    case 'get_page_structure':
+      javascriptCode = generatePageStructureCommand();
+      break;
 
-      case 'debug_elements':
-        javascriptCode = `
+    case 'debug_elements':
+      javascriptCode = `
           (function() {
             const buttons = Array.from(document.querySelectorAll('button')).map(btn => ({
               text: btn.textContent?.trim(),
@@ -324,10 +328,10 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }, null, 2);
           })()
         `;
-        break;
+      break;
 
-      case 'verify_form_state':
-        javascriptCode = `
+    case 'verify_form_state':
+      javascriptCode = `
           (function() {
             const forms = Array.from(document.querySelectorAll('form')).map(form => {
               const inputs = Array.from(form.querySelectorAll('input, textarea, select')).map(inp => ({
@@ -351,20 +355,20 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             return JSON.stringify({ forms, formCount: forms.length }, null, 2);
           })()
         `;
-        break;
+      break;
 
-      case 'hover':
-        // Hover over an element
-        const hoverSelector = args?.selector || '';
-        if (!hoverSelector) {
-          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
-        }
-        if (hoverSelector.includes('javascript:') || hoverSelector.includes('<script')) {
-          return 'Invalid selector: contains dangerous content';
-        }
-        const escapedHoverSelector = JSON.stringify(hoverSelector);
+    case 'hover':
+      // Hover over an element
+      const hoverSelector = args?.selector || '';
+      if (!hoverSelector) {
+        throw new Error('Missing selector for hover');
+      }
+      if (hoverSelector.includes('javascript:') || hoverSelector.includes('<script')) {
+        throw new Error('Invalid selector: contains dangerous content');
+      }
+      const escapedHoverSelector = JSON.stringify(hoverSelector);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const element = document.querySelector(${escapedHoverSelector});
@@ -403,24 +407,24 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'drag':
-        // Drag from one element to another
-        const startSel = args.startSelector;
-        const endSel = args?.endSelector || '';
+    case 'drag':
+      // Drag from one element to another
+      const startSel = args.startSelector;
+      const endSel = args?.endSelector || '';
 
-        if (!startSel || !endSel) {
-          return 'ERROR: Missing selectors. Use: {"startSelector": "source-element", "endSelector": "target-element"}';
-        }
-        if (startSel.includes('javascript:') || endSel.includes('javascript:')) {
-          return 'Invalid selector: contains dangerous content';
-        }
+      if (!startSel || !endSel) {
+        throw new Error('Missing start or end selector for drag');
+      }
+      if (startSel.includes('javascript:') || endSel.includes('javascript:')) {
+        throw new Error('Invalid selector: contains dangerous content');
+      }
 
-        const escapedStartSel = JSON.stringify(startSel);
-        const escapedEndSel = JSON.stringify(endSel);
+      const escapedStartSel = JSON.stringify(startSel);
+      const escapedEndSel = JSON.stringify(endSel);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const startElement = document.querySelector(${escapedStartSel});
@@ -474,30 +478,30 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'wait':
-        // Wait for element, text, or specified time
-        const waitSelector = args?.selector || '';
-        const waitText = args?.text || '';
-        const waitDuration = args?.duration || 0;
-        const waitTimeout = args?.timeout || 5000;
+    case 'wait':
+      // Wait for element, text, or specified time
+      const waitSelector = args?.selector || '';
+      const waitText = args?.text || '';
+      const waitDuration = args?.duration || 0;
+      const waitTimeout = args?.timeout || 5000;
 
-        if (!waitSelector && !waitText && !waitDuration) {
-          return 'ERROR: Specify selector, text, or duration. Use: {"selector": "..."} or {"text": "..."} or {"duration": 1000}';
-        }
+      if (!waitSelector && !waitText && !waitDuration) {
+        throw new Error('Specify a selector, text, or duration for wait');
+      }
 
-        if (waitDuration > 0) {
-          javascriptCode = `
+      if (waitDuration > 0) {
+        javascriptCode = `
             (function() {
               return new Promise(resolve => {
                 setTimeout(() => resolve('Waited ${waitDuration}ms'), ${waitDuration});
               });
             })();
           `;
-        } else if (waitSelector) {
-          const escapedWaitSelector = JSON.stringify(waitSelector);
-          javascriptCode = `
+      } else if (waitSelector) {
+        const escapedWaitSelector = JSON.stringify(waitSelector);
+        javascriptCode = `
             (function() {
               return new Promise((resolve) => {
                 const startTime = Date.now();
@@ -519,9 +523,9 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
               });
             })();
           `;
-        } else if (waitText) {
-          const escapedWaitText = JSON.stringify(waitText);
-          javascriptCode = `
+      } else if (waitText) {
+        const escapedWaitText = JSON.stringify(waitText);
+        javascriptCode = `
             (function() {
               return new Promise((resolve) => {
                 const startTime = Date.now();
@@ -542,25 +546,25 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
               });
             })();
           `;
-        } else {
-          javascriptCode = `'Invalid wait parameters'`;
-        }
-        break;
+      } else {
+        throw new Error('Missing selector, text, or duration for wait');
+      }
+      break;
 
-      case 'type':
-        // Type text character by character (different from fill which sets value directly)
-        const typeText = args?.text || '';
-        const typeSelector = args?.selector || '';
-        const typeSlowly = args?.slowly !== false; // Default to true for realistic typing
+    case 'type':
+      // Type text character by character (different from fill which sets value directly)
+      const typeText = args?.text || '';
+      const typeSelector = args?.selector || '';
+      const typeSlowly = args?.slowly !== false; // Default to true for realistic typing
 
-        if (!typeText) {
-          return 'ERROR: Missing text. Use: {"text": "text to type"} or {"text": "...", "selector": "input-selector"}';
-        }
+      if (!typeText) {
+        throw new Error('Missing text for type');
+      }
 
-        const escapedTypeText = JSON.stringify(typeText);
-        const escapedTypeSelector = typeSelector ? JSON.stringify(typeSelector) : 'null';
+      const escapedTypeText = JSON.stringify(typeText);
+      const escapedTypeSelector = typeSelector ? JSON.stringify(typeSelector) : 'null';
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               let element;
@@ -627,21 +631,21 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'get_attribute':
-        // Get an attribute value from an element
-        const attrSelector = args?.selector || '';
-        const attrName = args?.attribute || '';
+    case 'get_attribute':
+      // Get an attribute value from an element
+      const attrSelector = args?.selector || '';
+      const attrName = args?.attribute || '';
 
-        if (!attrSelector || !attrName) {
-          return 'ERROR: Missing selector or attribute. Use: {"selector": "...", "attribute": "href"}';
-        }
+      if (!attrSelector || !attrName) {
+        throw new Error('Missing selector or attribute for get_attribute');
+      }
 
-        const escapedAttrSelector = JSON.stringify(attrSelector);
-        const escapedAttrName = JSON.stringify(attrName);
+      const escapedAttrSelector = JSON.stringify(attrSelector);
+      const escapedAttrName = JSON.stringify(attrName);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const element = document.querySelector(${escapedAttrSelector});
@@ -664,19 +668,19 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'is_visible':
-        // Check if an element is visible
-        const visSelector = args?.selector || '';
+    case 'is_visible':
+      // Check if an element is visible
+      const visSelector = args?.selector || '';
 
-        if (!visSelector) {
-          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
-        }
+      if (!visSelector) {
+        throw new Error('Missing selector for is_visible');
+      }
 
-        const escapedVisSelector = JSON.stringify(visSelector);
+      const escapedVisSelector = JSON.stringify(visSelector);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const element = document.querySelector(${escapedVisSelector});
@@ -711,19 +715,19 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'count':
-        // Count elements matching a selector
-        const countSelector = args?.selector || '';
+    case 'count':
+      // Count elements matching a selector
+      const countSelector = args?.selector || '';
 
-        if (!countSelector) {
-          return 'ERROR: Missing selector. Use: {"selector": "your-css-selector"}';
-        }
+      if (!countSelector) {
+        throw new Error('Missing selector for count');
+      }
 
-        const escapedCountSelector = JSON.stringify(countSelector);
+      const escapedCountSelector = JSON.stringify(countSelector);
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               const elements = document.querySelectorAll(${escapedCountSelector});
@@ -742,24 +746,24 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })();
         `;
-        break;
+      break;
 
-      case 'console_log':
-        javascriptCode = `console.log('MCP Command:', ${JSON.stringify(
-          args?.message ?? 'Hello from MCP!',
-        )}); 'Console message sent'`;
-        break;
+    case 'console_log':
+      javascriptCode = `console.log('MCP Command:', ${JSON.stringify(
+        args?.message ?? 'Hello from MCP!',
+      )}); 'Console message sent'`;
+      break;
 
-      case 'eval':
-        const rawCode = typeof args === 'string' ? args : args?.code || command;
-        // Enhanced eval with better error handling and result reporting
-        const codeHash = Buffer.from(rawCode).toString('base64').slice(0, 10);
-        const isStateTest =
-          rawCode.includes('window.testState') ||
-          rawCode.includes('persistent-test-value') ||
-          rawCode.includes('window.testValue');
+    case 'eval':
+      const rawCode = args.code;
+      // Enhanced eval with better error handling and result reporting
+      const codeHash = Buffer.from(rawCode).toString('base64').slice(0, 10);
+      const isStateTest =
+        rawCode.includes('window.testState') ||
+        rawCode.includes('persistent-test-value') ||
+        rawCode.includes('window.testValue');
 
-        javascriptCode = `
+      javascriptCode = `
           (function() {
             try {
               // Prevent rapid execution of the same code unless it's a state test
@@ -816,13 +820,13 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
             }
           })()
         `;
-        break;
+      break;
 
-      default: {
-        const exhaustiveCommand: never = command;
-        return exhaustiveCommand;
-      }
+    default: {
+      const exhaustiveCommand: never = command;
+      return exhaustiveCommand;
     }
+  }
 
   return javascriptCode;
 }

@@ -1,12 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'util';
-import type {
-  DevToolsTarget,
-  LogType,
-  WindowTargetOptions,
-} from '../../application/electron-automation';
+import type { LogType, WindowTargetOptions } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
 import { connectForLogs, findElectronTarget } from './cdp-connection';
+import type { DevToolsTarget } from './devtools-types';
 
 /**
  * Read logs from running Electron applications

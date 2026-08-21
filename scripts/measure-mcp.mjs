@@ -27,14 +27,26 @@ function meta() {
   };
 }
 
-async function toolsList() {
+async function mcpRequest(method, params, id) {
+  const startedAt = performance.now();
+  const requestName = typeof params.name === 'string' ? params.name : 'debug-electron-mcp-measure';
   const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'tools/list', 'mcp-name': 'debug-electron-mcp-measure' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: meta() } }),
+    headers: { 'content-type': 'application/json', 'mcp-protocol-version': '2026-07-28', 'mcp-method': method, 'mcp-name': requestName },
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { ...params, _meta: meta() } }),
   });
-  if (!response.ok) throw new Error(`tools/list failed with ${response.status}.`);
-  return response.text();
+  const body = await response.text();
+  if (!response.ok) throw new Error(`${method} failed with ${response.status}.`);
+  const payload = JSON.parse(body);
+  if (payload.error) throw new Error(`${method} returned ${JSON.stringify(payload.error)}.`);
+  return {
+    body,
+    elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
+  };
+}
+
+async function toolsList(id = 1) {
+  return (await mcpRequest('tools/list', {}, id)).body;
 }
 
 async function waitForHealth() {
@@ -83,10 +95,50 @@ async function benchmarkDiscovery() {
   }
 }
 
+function summarizeLatency(samples) {
+  const sorted = [...samples].sort((left, right) => left - right);
+  const percentile = (fraction) => sorted[Math.ceil(sorted.length * fraction) - 1];
+  return {
+    samples: sorted.length,
+    minMs: sorted[0],
+    medianMs: percentile(0.5),
+    p95Ms: percentile(0.95),
+    maxMs: sorted.at(-1),
+  };
+}
+
+async function benchmarkHttpOperations() {
+  const operations = {
+    'server/discover': () => mcpRequest('server/discover', {}, 100),
+    'tools/list': () => mcpRequest('tools/list', {}, 101),
+    'tools/call describe_electron_command': () =>
+      mcpRequest(
+        'tools/call',
+        { name: 'describe_electron_command', arguments: { command: 'wait' } },
+        102,
+      ),
+  };
+  const results = {};
+
+  for (const [name, operation] of Object.entries(operations)) {
+    for (let index = 0; index < 3; index += 1) await operation();
+    const samples = [];
+    let responseBytes = 0;
+    for (let index = 0; index < 20; index += 1) {
+      const result = await operation();
+      samples.push(result.elapsedMs);
+      responseBytes = Buffer.byteLength(result.body);
+    }
+    results[name] = { ...summarizeLatency(samples), responseBytes };
+  }
+
+  return results;
+}
+
 try {
   await waitForHealth();
   const first = await toolsList();
-  const second = await toolsList();
+  const second = await toolsList(1);
   if (first !== second) throw new Error('Repeated tools/list responses differ.');
   const parsed = JSON.parse(first);
   const bytes = Buffer.byteLength(first);
@@ -104,6 +156,7 @@ try {
       repeatedResponseEqual: true,
       toolBytes,
     },
+    httpOperations: await benchmarkHttpOperations(),
     discovery: await benchmarkDiscovery(),
   };
   console.log(JSON.stringify(result, null, 2));
