@@ -41,4 +41,4 @@ The adapter now owns concurrent mutable connection state. `CdpSession` isolates 
 
 Real local HTTP and WebSocket tests prove concurrent cold-call coalescing, hard capacity under concurrent admission, sequential reuse, concurrent evaluation, active-call protection, bounded and cancellable opening, closed-socket replacement, TTL eviction, capacity eviction, stale-target refresh, and shutdown cleanup.
 
-`npm run measure:mcp` compares the cold and warm paths. In the review-fix run, discovery fell from 31.23 ms cold to 0.0039 ms median warm. CDP evaluation fell from 9.26 ms cold to 0.1476 ms median warm. The end-to-end MCP benchmark fell from 74.94 ms for the cold tool call to 2.88 ms median for the next 20 calls. All 21 tool calls used one discovery request and one CDP connection.
+`npm run measure:mcp` compares the cold and warm paths. In the final run, discovery fell from 22.05 ms cold to 0.0027 ms median warm. CDP evaluation fell from 8.49 ms cold to 0.1707 ms median warm. The end-to-end MCP benchmark fell from 69.74 ms for the cold tool call to 2.47 ms median for the next 20 calls. All 21 tool calls used one discovery request and one CDP connection.

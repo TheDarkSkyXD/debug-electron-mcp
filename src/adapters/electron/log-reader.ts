@@ -5,9 +5,7 @@ import { logger } from '../../shared/logger';
 import { connectForLogs, findElectronTarget } from './cdp-connection';
 import type { DevToolsTarget } from './devtools-types';
 
-export type FindElectronTarget = (
-  options?: WindowTargetOptions,
-) => Promise<DevToolsTarget>;
+export type FindElectronTarget = (options?: WindowTargetOptions) => Promise<DevToolsTarget>;
 
 /**
  * Read logs from running Electron applications

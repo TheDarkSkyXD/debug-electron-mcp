@@ -87,9 +87,9 @@ Each operation used 3 warmups and 20 measured loopback requests against the prod
 
 | Operation | Median | p95 | Maximum | Response bytes |
 | --- | ---: | ---: | ---: | ---: |
-| `server/discover` | 2.92 ms | 4.82 ms | 5.60 ms | 291 |
-| `tools/list` | 2.86 ms | 4.87 ms | 5.78 ms | 5,225 |
-| `tools/call describe_electron_command` | 2.38 ms | 3.86 ms | 4.10 ms | 680 |
+| `server/discover` | 2.47 ms | 3.31 ms | 6.94 ms | 291 |
+| `tools/list` | 2.54 ms | 3.09 ms | 5.58 ms | 5,225 |
+| `tools/call describe_electron_command` | 2.21 ms | 2.46 ms | 2.70 ms | 680 |
 
 These values measure MCP server and local HTTP overhead. Electron command time also depends on the target app, renderer work, and CDP connection.
 
@@ -99,8 +99,8 @@ The controlled benchmark probes six ports with a fixed 20 ms response delay.
 
 | Strategy | Mean response time |
 | --- | ---: |
-| Bounded parallel discovery | 31.62 ms |
-| Serial reference | 186.64 ms |
+| Bounded parallel discovery | 31.56 ms |
+| Serial reference | 186.93 ms |
 
 Bounded parallel discovery is about 5.9 times faster in this benchmark.
 
@@ -110,9 +110,9 @@ This controlled loopback benchmark makes one cold call followed by 20 warm calls
 
 | Stage | Cold call | Warm median | Warm p95 | Reuse evidence |
 | --- | ---: | ---: | ---: | --- |
-| Electron discovery | 31.23 ms | 0.0039 ms | 0.0090 ms | 6 network probes total across all 21 scans |
-| CDP evaluation | 9.26 ms | 0.1476 ms | 0.2536 ms | 1 WebSocket connection for all 21 evaluations |
-| MCP `tools/call` | 74.94 ms | 2.88 ms | 7.65 ms | 1 discovery request and 1 CDP connection for 21 tool calls |
+| Electron discovery | 22.05 ms | 0.0027 ms | 0.0064 ms | 6 network probes total across all 21 scans |
+| CDP evaluation | 8.49 ms | 0.1707 ms | 0.2573 ms | 1 WebSocket connection for all 21 evaluations |
+| MCP `tools/call` | 69.74 ms | 2.47 ms | 5.26 ms | 1 discovery request and 1 CDP connection for 21 tool calls |
 
 The first two rows isolate adapter overhead. The third sends real stateless HTTP `tools/call` requests through the MCP transport, with controlled local discovery and CDP endpoints. Real commands still include renderer execution time and any model time between tool calls. If the gap between calls exceeds the five-second discovery TTL or 15-second CDP idle TTL, the next call safely pays the cold-path cost again.
 
@@ -123,17 +123,19 @@ The first two rows isolate adapter overhead. The third sends real stateless HTTP
 | TypeScript 7 | Passed |
 | ESLint and architecture boundaries | Passed with zero warnings |
 | Prettier | Passed |
-| Vitest | 7 files and 37 tests passed |
-| Production bundle | 133,790 bytes |
+| Vitest | 8 files and 52 tests passed |
+| Production bundle | 149,168 bytes |
 | Live MCP verifier | Discovery, stateless calls, tool calls, structured results, headers, and legacy rejection passed |
 | Direct dependency age | 31 of 31 passed |
 | Security audit | Zero vulnerabilities |
 
-The production bundle is 59.7 percent smaller than the recorded 331,676-byte pre-modernization baseline.
+The production bundle is 55.0 percent smaller than the recorded 331,676-byte pre-modernization baseline.
 
 ## Review result
 
 Two independent reviews checked repository standards and the requested behavior. The first pass found unsafe validation flow, CDP result ownership, an incomplete boundary type guard, missing platform-import enforcement, unsafe test casts, and two measurement-script errors. The implementation fixes all findings. Both reviewers reported no unresolved high, medium, or hard issues after the final pass.
+
+The sequential-speed follow-up received the same two-axis review. Reviewers found cold-admission races, unbounded connection opening, incomplete shutdown cleanup, and adapter-only performance evidence. The fixes add atomic admission, stale-entry rechecks, active-call protection, timed and cancellable opening, independent resource cleanup, and real MCP `tools/call` measurement. The final review found no unresolved hard or medium issues.
 
 The repeated exhaustive switches in `commands.ts` and `renderer-command-builder.ts` remain by design. TypeScript checks both against the command union, and `commandSpecs` uses `satisfies Record<ElectronCommand, CommandSpec>`.
 
