@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../src/utils/electron-connection', () => ({
+vi.mock('../../src/adapters/electron/cdp-connection', () => ({
   findElectronTarget: vi.fn().mockRejectedValue(new Error('DevTools unavailable')),
   connectForLogs: vi.fn(),
 }));
 
-import { readElectronLogs } from '../../src/utils/electron-logs';
+import { readElectronLogs } from '../../src/adapters/electron/log-reader';
 
 describe('Electron log fallback', () => {
   it.runIf(process.platform !== 'darwin')(

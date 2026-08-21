@@ -1,43 +1,16 @@
-import { executeInElectron, findElectronTarget, WindowTargetOptions } from './electron-connection';
-import { generateFindElementsCommand, generateClickByTextCommand } from './electron-commands';
+import type { ElectronCommandRequest } from '../../application/commands';
+import { generateFindElementsCommand, generateClickByTextCommand } from './renderer-command-scripts';
 import {
   generateFillInputCommand,
   generateSelectOptionCommand,
   generatePageStructureCommand,
-} from './electron-input-commands';
+} from './renderer-input-scripts';
 
-export interface CommandArgs {
-  selector?: string;
-  text?: string;
-  value?: string;
-  placeholder?: string;
-  message?: string;
-  code?: string;
-  // New properties for additional tools
-  duration?: number; // For wait command (milliseconds)
-  timeout?: number; // For wait command timeout
-  startSelector?: string; // For drag command - source element
-  endSelector?: string; // For drag command - target element
-  attribute?: string; // For get_attribute command
-  slowly?: boolean; // For type command - type character by character
-}
+export function buildRendererCommand(request: ElectronCommandRequest): string {
+  let javascriptCode: string;
+  const { command, args } = request;
 
-/**
- * Enhanced command executor with improved React support.
- * @param command - The command to execute
- * @param args - Command-specific arguments
- * @param windowOptions - Optional window targeting (targetId or windowTitle)
- */
-export async function sendCommandToElectron(
-  command: string,
-  args?: CommandArgs,
-  windowOptions?: WindowTargetOptions,
-): Promise<string> {
-  try {
-    const target = await findElectronTarget(windowOptions);
-    let javascriptCode: string;
-
-    switch (command.toLowerCase()) {
+  switch (command) {
       case 'get_title':
         javascriptCode = 'document.title';
         break;
@@ -434,7 +407,7 @@ export async function sendCommandToElectron(
 
       case 'drag':
         // Drag from one element to another
-        const startSel = args?.startSelector || args?.selector || '';
+        const startSel = args.startSelector;
         const endSel = args?.endSelector || '';
 
         if (!startSel || !endSel) {
@@ -845,43 +818,11 @@ export async function sendCommandToElectron(
         `;
         break;
 
-      default:
-        javascriptCode = command;
-    }
-
-    const rawResult = await executeInElectron(javascriptCode, target);
-
-    // Try to parse structured response from enhanced eval
-    if (command.toLowerCase() === 'eval') {
-      try {
-        const parsedResult = JSON.parse(rawResult);
-        if (parsedResult && typeof parsedResult === 'object' && 'success' in parsedResult) {
-          if (!parsedResult.success) {
-            return `Command failed: ${parsedResult.error}${
-              parsedResult.stack ? '\nStack: ' + parsedResult.stack : ''
-            }`;
-          }
-          return `Command successful${
-            parsedResult.result !== null ? ': ' + JSON.stringify(parsedResult.result) : ''
-          }`;
-        }
-      } catch {
-        // If it's not JSON, treat as regular result
+      default: {
+        const exhaustiveCommand: never = command;
+        return exhaustiveCommand;
       }
     }
 
-    // Handle regular results
-    if (rawResult === 'undefined' || rawResult === 'null' || rawResult === '') {
-      return `Warning: Command executed but returned ${
-        rawResult || 'empty'
-      } - this may indicate the element wasn't found or the action failed`;
-    }
-
-    return `Result: ${rawResult}`;
-  } catch (error) {
-    throw new Error(
-      `Failed to send command: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
+  return javascriptCode;
 }

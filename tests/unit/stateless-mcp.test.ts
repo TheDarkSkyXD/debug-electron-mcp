@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseElectronCommand } from '../../src/commands';
-import { scanForElectronApps } from '../../src/utils/electron-discovery';
+import { parseElectronCommand } from '../../src/application/commands';
+import { scanForElectronApps } from '../../src/adapters/electron/discovery';
+import { buildRendererCommand } from '../../src/adapters/electron/renderer-command-builder';
 
 describe('stateless MCP migration seams', () => {
   afterEach(() => {
@@ -31,11 +32,30 @@ describe('stateless MCP migration seams', () => {
 
   it('keeps every runtime command option through command-specific validation', () => {
     expect(parseElectronCommand('drag', { startSelector: '#source', endSelector: '#target' }))
-      .toEqual({ startSelector: '#source', endSelector: '#target' });
-    expect(parseElectronCommand('wait', { duration: 25, timeout: 100 }))
-      .toEqual({ duration: 25, timeout: 100 });
-    expect(parseElectronCommand('type', { text: 'hello', slowly: false }))
-      .toEqual({ text: 'hello', slowly: false });
+      .toEqual({
+        command: 'drag',
+        args: { startSelector: '#source', endSelector: '#target' },
+      });
+    expect(parseElectronCommand('wait', { duration: 25, timeout: 100 })).toEqual({
+      command: 'wait',
+      args: { duration: 25, timeout: 100 },
+    });
+    expect(parseElectronCommand('type', { text: 'hello', slowly: false })).toEqual({
+      command: 'type',
+      args: { text: 'hello', slowly: false },
+    });
     expect(() => parseElectronCommand('count', { selector: '.item', ignored: true })).toThrow();
+  });
+
+  it('builds renderer code from the same discriminated command contract', () => {
+    const request = parseElectronCommand('drag', {
+      startSelector: '#source',
+      endSelector: '#target',
+    });
+
+    const rendererCode = buildRendererCommand(request);
+
+    expect(rendererCode).toContain('#source');
+    expect(rendererCode).toContain('#target');
   });
 });

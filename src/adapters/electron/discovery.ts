@@ -1,49 +1,13 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { logger } from './logger';
-
-export interface ElectronAppInfo {
-  port: number;
-  targets: DevToolsTarget[];
-}
-
-export interface DevToolsTarget {
-  id: string;
-  title?: string;
-  url?: string;
-  type: string;
-  description?: string;
-  webSocketDebuggerUrl?: string;
-}
-
-export interface WindowInfo {
-  id: string;
-  title: string;
-  url: string;
-  type: string;
-  description: string;
-  webSocketDebuggerUrl: string;
-}
-
-/** Simplified window target info for the list_electron_windows tool */
-export interface ElectronWindowTarget {
-  id: string;
-  title: string;
-  url: string;
-  port: number;
-  type: string;
-}
-
-export interface ElectronWindowResult {
-  platform: string;
-  devToolsPort?: number;
-  windows: WindowInfo[];
-  totalTargets: number;
-  electronTargets: number;
-  processInfo?: unknown;
-  message: string;
-  automationReady: boolean;
-}
+import type {
+  DevToolsTarget,
+  ElectronAppInfo,
+  ElectronWindowResult,
+  ElectronWindowTarget,
+  WindowInfo,
+} from '../../application/electron-automation';
+import { logger } from '../../shared/logger';
 
 /**
  * Scan for running Electron applications with DevTools enabled
@@ -57,9 +21,14 @@ const DEFAULT_PORTS = [
 const DISCOVERY_CONCURRENCY = 6;
 
 function isDevToolsTarget(value: unknown): value is DevToolsTarget {
-  if (!value || typeof value !== 'object') return false;
-  const target = value as Record<string, unknown>;
-  return typeof target.id === 'string' && typeof target.type === 'string';
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'type' in value &&
+    typeof value.type === 'string'
+  );
 }
 
 async function scanPort(port: number): Promise<ElectronAppInfo | undefined> {
@@ -141,7 +110,7 @@ export async function getElectronProcessInfo(): Promise<Record<string, unknown>>
 /**
  * Find the main target from a list of targets
  */
-export function findMainTarget(targets: DevToolsTarget[]): DevToolsTarget | null {
+export function findMainTarget(targets: readonly DevToolsTarget[]): DevToolsTarget | null {
   return (
     targets.find((target) => target.type === 'page' && !target.title?.includes('DevTools')) ||
     targets.find((target) => target.type === 'page') ||

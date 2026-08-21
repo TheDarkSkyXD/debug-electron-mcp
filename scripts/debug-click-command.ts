@@ -1,5 +1,5 @@
 
-import { generateClickByTextCommand } from '../src/utils/electron-commands';
+import { generateClickByTextCommand } from '../src/adapters/electron/renderer-command-scripts';
 import fs from 'fs';
 
 // Check args

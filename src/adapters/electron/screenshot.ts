@@ -2,26 +2,13 @@ import { chromium } from 'playwright';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { logger } from './utils/logger';
-import { scanForElectronApps, type DevToolsTarget } from './utils/electron-discovery';
-
-/** Options for taking a screenshot */
-export interface ScreenshotOptions {
-  /** Path to save the screenshot (optional, defaults to in-memory only) */
-  outputPath?: string;
-  /** CDP target ID to screenshot a specific window (exact match, takes priority over windowTitle) */
-  targetId?: string;
-  /** Window title to screenshot (case-insensitive partial match) */
-  windowTitle?: string;
-  /** Specific ports to scan (overrides default port scanning) */
-  ports?: number[];
-  /** Inline returns base64. File writes a PNG and returns only metadata. */
-  delivery?: 'inline' | 'file';
-}
-
-export type ScreenshotResult =
-  | { kind: 'inline'; base64: string; bytes: number }
-  | { kind: 'file'; filePath: string; bytes: number };
+import type {
+  DevToolsTarget,
+  ScreenshotOptions,
+  ScreenshotResult,
+} from '../../application/electron-automation';
+import { logger } from '../../shared/logger';
+import { scanForElectronApps } from './discovery';
 
 /**
  * Take a screenshot of the running Electron application using Chrome DevTools Protocol

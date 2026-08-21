@@ -1,18 +1,7 @@
 import WebSocket from 'ws';
-import { scanForElectronApps, findMainTarget, type DevToolsTarget } from './electron-discovery';
-import { logger } from './logger';
-
-export type { DevToolsTarget } from './electron-discovery';
-
-/** Options for targeting a specific Electron window */
-export interface WindowTargetOptions {
-  /** CDP target ID (exact match) */
-  targetId?: string;
-  /** Window title (case-insensitive partial match) */
-  windowTitle?: string;
-  /** Specific ports to scan (overrides default port scanning) */
-  ports?: readonly number[];
-}
+import type { DevToolsTarget, WindowTargetOptions } from '../../application/electron-automation';
+import { logger } from '../../shared/logger';
+import { findMainTarget, scanForElectronApps } from './discovery';
 
 /**
  * Find and connect to a running Electron application.

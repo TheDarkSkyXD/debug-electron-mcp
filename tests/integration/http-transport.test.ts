@@ -1,16 +1,40 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../../src/screenshot', () => ({
-  takeScreenshot: vi.fn().mockResolvedValue({
-    kind: 'inline',
-    base64: Buffer.from('inline-image').toString('base64'),
-    bytes: Buffer.byteLength('inline-image'),
-  }),
-}));
-
-import { startHttpServer, type RunningHttpServer } from '../../src/serve';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { ElectronAutomation } from '../../src/application/electron-automation';
+import { ProjectRegistry } from '../../src/application/project-registry';
+import {
+  startHttpServer,
+  type RunningHttpServer,
+} from '../../src/transport/http-server';
+import { createMcpServer } from '../../src/transport/mcp-server';
 
 const protocolVersion = '2026-07-28';
+
+function createTestServer() {
+  const automation: ElectronAutomation = {
+    discover: async () => [],
+    getWindowInfo: async () => ({
+      platform: process.platform,
+      windows: [],
+      totalTargets: 0,
+      electronTargets: 0,
+      message: 'No Electron applications found',
+      automationReady: false,
+    }),
+    listWindows: async () => [],
+    readLogs: async () => '',
+    executeCommand: async () => '',
+    takeScreenshot: async () => ({
+      kind: 'inline',
+      base64: Buffer.from('inline-image').toString('base64'),
+      bytes: Buffer.byteLength('inline-image'),
+    }),
+  };
+  const projects = new ProjectRegistry({
+    load: () => undefined,
+    save: () => undefined,
+  });
+  return createMcpServer({ automation, projects });
+}
 
 function requestMeta() {
   return {
@@ -58,7 +82,7 @@ describe('MCP 2026 HTTP transport', () => {
   }
 
   it('serves deterministic stateless MCP 2026 requests and rejects legacy traffic', async () => {
-    running = await startHttpServer(0);
+    running = await startHttpServer(createTestServer, 0);
 
     const discover = await call('server/discover', {}, 1);
     const discoverBody = await discover.json();

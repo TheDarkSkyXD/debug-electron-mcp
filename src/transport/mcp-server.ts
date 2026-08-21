@@ -1,15 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { describeElectronCommand, ElectronCommandSchema, parseElectronCommand } from './commands';
-import { projectRegistry } from './project-registry';
-import { takeScreenshot } from './screenshot';
 import {
-  getElectronWindowInfo,
-  listElectronWindows,
-  scanForElectronApps,
-} from './utils/electron-discovery';
-import { readElectronLogs } from './utils/electron-logs';
-import { sendCommandToElectron } from './utils/electron-enhanced-commands';
+  describeElectronCommand,
+  ElectronCommandSchema,
+  parseElectronCommand,
+} from '../application/commands';
+import type { ElectronAutomation } from '../application/electron-automation';
+import type { ProjectRegistry } from '../application/project-registry';
 
 const serverInfo = { name: '@debugelectron/debug-electron-mcp', version: '1.7.0' };
 const toolResultSchema = z.object({ ok: z.boolean(), data: z.unknown() });
@@ -33,6 +30,11 @@ export const toolNames = Object.freeze([
 
 export type ProjectScope = z.infer<typeof projectScopeSchema>;
 
+export interface McpServerDependencies {
+  readonly automation: ElectronAutomation;
+  readonly projects: ProjectRegistry;
+}
+
 function success(data: unknown, text: string) {
   return { content: [{ type: 'text' as const, text }], structuredContent: { ok: true, data } };
 }
@@ -46,15 +48,18 @@ function failure(error: unknown) {
   };
 }
 
-function resolvePorts(scope: ProjectScope): number[] | undefined {
+function resolvePorts(
+  scope: ProjectScope,
+  projects: ProjectRegistry,
+): readonly number[] | undefined {
   if (!scope.projectName) return undefined;
-  const project = projectRegistry.resolve(scope.projectName);
+  const project = projects.resolve(scope.projectName);
   if (!project) throw new Error(`Project "${scope.projectName}" is not registered.`);
   return [project.port];
 }
 
-function projectRows() {
-  return Object.entries(projectRegistry.list())
+function projectRows(projects: ProjectRegistry) {
+  return Object.entries(projects.list())
     .map(([name, config]) => ({
       name,
       port: config.port,
@@ -63,7 +68,7 @@ function projectRows() {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function createMcpServer(): McpServer {
+export function createMcpServer({ automation, projects }: McpServerDependencies): McpServer {
   const server = new McpServer(serverInfo, {
     capabilities: { tools: {} },
     cacheHints: {
@@ -76,10 +81,17 @@ export function createMcpServer(): McpServer {
     'describe_electron_command',
     {
       description: 'Return exact arguments for one Electron command.',
-      inputSchema: z.object({ command: ElectronCommandSchema }),
+      inputSchema: z.object({ command: z.string().min(1) }),
       outputSchema: toolResultSchema,
     },
-    ({ command }) => success(describeElectronCommand(command), `Command ${command}.`),
+    ({ command }) => {
+      try {
+        const parsedCommand = ElectronCommandSchema.parse(command);
+        return success(describeElectronCommand(parsedCommand), `Command ${parsedCommand}.`);
+      } catch (error) {
+        return failure(error);
+      }
+    },
   );
 
   server.registerTool(
@@ -91,7 +103,10 @@ export function createMcpServer(): McpServer {
     },
     async ({ includeChildren = false, ...scope }) => {
       try {
-        const info = await getElectronWindowInfo(includeChildren, resolvePorts(scope));
+        const info = await automation.getWindowInfo({
+          includeChildren,
+          ports: resolvePorts(scope, projects),
+        });
         return success(
           info,
           info.automationReady ? `${info.windows.length} window(s).` : info.message,
@@ -111,7 +126,10 @@ export function createMcpServer(): McpServer {
     },
     async ({ includeDevTools = false, ...scope }) => {
       try {
-        const windows = await listElectronWindows(includeDevTools, resolvePorts(scope));
+        const windows = await automation.listWindows({
+          includeDevTools,
+          ports: resolvePorts(scope, projects),
+        });
         return success({ windows }, `${windows.length} window(s).`);
       } catch (error) {
         return failure(error);
@@ -127,8 +145,8 @@ export function createMcpServer(): McpServer {
       outputSchema: toolResultSchema,
     },
     () => {
-      const projects = projectRows();
-      return success({ projects }, `${projects.length} project(s).`);
+      const rows = projectRows(projects);
+      return success({ projects: rows }, `${rows.length} project(s).`);
     },
   );
 
@@ -144,7 +162,11 @@ export function createMcpServer(): McpServer {
     },
     async ({ logType = 'all', lines = 100, ...scope }) => {
       try {
-        const logs = await readElectronLogs(logType, lines, resolvePorts(scope));
+        const logs = await automation.readLogs({
+          logType,
+          lines,
+          ports: resolvePorts(scope, projects),
+        });
         return success({ logs }, `Log snapshot with up to ${lines} lines.`);
       } catch (error) {
         return failure(error);
@@ -165,8 +187,8 @@ export function createMcpServer(): McpServer {
     },
     async ({ projectName, port, windowTitlePattern }) => {
       try {
-        const project = projectRegistry.register(projectName, port, windowTitlePattern);
-        const apps = await scanForElectronApps([project.port]);
+        const project = projects.register(projectName, port, windowTitlePattern);
+        const apps = await automation.discover([project.port]);
         return success(
           { name: projectName, ...project, connected: apps.length > 0 },
           `Project ${projectName} on port ${project.port}.`,
@@ -189,10 +211,13 @@ export function createMcpServer(): McpServer {
     },
     async ({ command, args, targetId, windowTitle, ...scope }) => {
       try {
-        const result = await sendCommandToElectron(command, parseElectronCommand(command, args), {
-          targetId,
-          windowTitle,
-          ports: resolvePorts(scope),
+        const result = await automation.executeCommand({
+          request: parseElectronCommand(command, args),
+          target: {
+            targetId,
+            windowTitle,
+            ports: resolvePorts(scope, projects),
+          },
         });
         return success({ command, result }, `Command ${command} completed.`);
       } catch (error) {
@@ -213,12 +238,12 @@ export function createMcpServer(): McpServer {
     },
     async ({ outputPath, delivery, targetId, windowTitle, ...scope }) => {
       try {
-        const screenshot = await takeScreenshot({
+        const screenshot = await automation.takeScreenshot({
           outputPath,
           delivery,
           targetId,
           windowTitle,
-          ports: resolvePorts(scope),
+          ports: resolvePorts(scope, projects),
         });
         if (screenshot.kind === 'inline') {
           return {
@@ -247,7 +272,7 @@ export function createMcpServer(): McpServer {
       outputSchema: toolResultSchema,
     },
     ({ projectName }) => {
-      const removed = projectRegistry.unregister(projectName);
+      const removed = projects.unregister(projectName);
       return removed
         ? success({ projectName, removed }, `Project ${projectName} removed.`)
         : failure(new Error(`Project "${projectName}" was not found.`));

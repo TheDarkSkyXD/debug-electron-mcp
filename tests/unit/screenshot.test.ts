@@ -7,7 +7,7 @@ vi.mock('playwright', () => ({
     },
 }));
 
-vi.mock('../../src/utils/electron-discovery', () => ({
+vi.mock('../../src/adapters/electron/discovery', () => ({
     scanForElectronApps: vi.fn(),
 }));
 
@@ -15,9 +15,9 @@ vi.mock('fs/promises', () => ({
     writeFile: vi.fn(),
 }));
 
-import { takeScreenshot } from '../../src/screenshot';
+import { takeScreenshot } from '../../src/adapters/electron/screenshot';
 import { chromium } from 'playwright';
-import { scanForElectronApps } from '../../src/utils/electron-discovery';
+import { scanForElectronApps } from '../../src/adapters/electron/discovery';
 import * as fs from 'fs/promises';
 
 const mockedChromium = vi.mocked(chromium);

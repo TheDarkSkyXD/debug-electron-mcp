@@ -2,7 +2,7 @@ import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import discovery from '../src/utils/electron-discovery.ts';
+import discovery from '../src/adapters/electron/discovery.ts';
 
 const { scanForElectronApps } = discovery;
 
@@ -91,6 +91,9 @@ try {
   const parsed = JSON.parse(first);
   const bytes = Buffer.byteLength(first);
   const descriptions = parsed.result.tools.map((tool) => tool.description ?? '').join('');
+  const toolBytes = Object.fromEntries(
+    parsed.result.tools.map((tool) => [tool.name, Buffer.byteLength(JSON.stringify(tool))]),
+  );
   const result = {
     before,
     after: {
@@ -99,6 +102,7 @@ try {
       estimatedTokens: Math.ceil(bytes / 4),
       estimateMethod: 'ceil(JSON bytes / 4), not tokenizer-exact',
       repeatedResponseEqual: true,
+      toolBytes,
     },
     discovery: await benchmarkDiscovery(),
   };

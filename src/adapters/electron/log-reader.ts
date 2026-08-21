@@ -1,14 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'util';
-import {
-  findElectronTarget,
-  connectForLogs,
-  type WindowTargetOptions,
-} from './electron-connection';
-import type { DevToolsTarget } from './electron-discovery';
-import { logger } from './logger';
-
-export type LogType = 'console' | 'main' | 'renderer' | 'all';
+import type {
+  DevToolsTarget,
+  LogType,
+  WindowTargetOptions,
+} from '../../application/electron-automation';
+import { logger } from '../../shared/logger';
+import { connectForLogs, findElectronTarget } from './cdp-connection';
 
 /**
  * Read logs from running Electron applications
@@ -19,7 +17,7 @@ export type LogType = 'console' | 'main' | 'renderer' | 'all';
 export async function readElectronLogs(
   logType: LogType = 'all',
   lines: number = 100,
-  ports?: number[],
+  ports?: readonly number[],
 ): Promise<string> {
   try {
     logger.info('[MCP] Looking for running Electron applications for log access...');

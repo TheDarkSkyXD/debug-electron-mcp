@@ -1,12 +1,12 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { createMcpHandler } from '@modelcontextprotocol/server';
+import { createMcpHandler, type McpServer } from '@modelcontextprotocol/server';
 import {
   localhostHostValidation,
   localhostOriginValidation,
   toNodeHandler,
 } from '@modelcontextprotocol/node';
-import { createMcpServer, toolNames } from './mcp-server';
-import { logger } from './utils/logger';
+import { logger } from '../shared/logger';
+import { toolNames } from './mcp-server';
 
 export interface RunningHttpServer {
   readonly server: Server;
@@ -23,7 +23,10 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(body);
 }
 
-export async function startHttpServer(port = 3100): Promise<RunningHttpServer> {
+export async function startHttpServer(
+  createMcpServer: () => McpServer,
+  port = 3100,
+): Promise<RunningHttpServer> {
   const handler = createMcpHandler(createMcpServer, {
     legacy: 'reject',
     responseMode: 'json',

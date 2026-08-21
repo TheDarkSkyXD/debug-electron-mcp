@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { createMcpServer } from './mcp-server';
-import { startHttpServer } from './serve';
-import { logger } from './utils/logger';
+import { createElectronAutomation } from './adapters/electron/electron-automation';
+import { JsonProjectRegistryStore } from './adapters/persistence/json-project-registry-store';
+import { ProjectRegistry } from './application/project-registry';
+import { logger } from './shared/logger';
+import { startHttpServer } from './transport/http-server';
+import { createMcpServer } from './transport/mcp-server';
 
 function parsePort(argv: readonly string[]): number {
   const portIndex = argv.indexOf('--port');
@@ -16,11 +19,17 @@ function parsePort(argv: readonly string[]): number {
 }
 
 async function main(): Promise<void> {
+  const dependencies = {
+    automation: createElectronAutomation(),
+    projects: new ProjectRegistry(new JsonProjectRegistryStore()),
+  };
+  const createServer = () => createMcpServer(dependencies);
+
   if (process.argv.includes('serve')) {
-    await startHttpServer(parsePort(process.argv));
+    await startHttpServer(createServer, parsePort(process.argv));
     return;
   }
-  serveStdio(createMcpServer, {
+  serveStdio(createServer, {
     legacy: 'reject',
     onerror: (error) => logger.error('MCP stdio error:', error),
   });
