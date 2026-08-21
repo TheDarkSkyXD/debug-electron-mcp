@@ -1,8 +1,9 @@
 import { chromium } from 'playwright';
 import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 import { logger } from './utils/logger';
-import { scanForElectronApps } from './utils/electron-discovery';
-import { WindowTargetOptions } from './utils/electron-connection';
+import { scanForElectronApps, type DevToolsTarget } from './utils/electron-discovery';
 
 /** Options for taking a screenshot */
 export interface ScreenshotOptions {
@@ -14,20 +15,20 @@ export interface ScreenshotOptions {
   windowTitle?: string;
   /** Specific ports to scan (overrides default port scanning) */
   ports?: number[];
+  /** Inline returns base64. File writes a PNG and returns only metadata. */
+  delivery?: 'inline' | 'file';
 }
+
+export type ScreenshotResult =
+  | { kind: 'inline'; base64: string; bytes: number }
+  | { kind: 'file'; filePath: string; bytes: number };
 
 /**
  * Take a screenshot of the running Electron application using Chrome DevTools Protocol
  */
-export async function takeScreenshot(
-  options: ScreenshotOptions = {},
-): Promise<{
-  filePath?: string;
-  base64: string;
-  data: string;
-  error?: string;
-}> {
+export async function takeScreenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
   const { outputPath, targetId, windowTitle, ports } = options;
+  const delivery = options.delivery ?? (outputPath ? 'file' : 'inline');
 
   logger.info('📸 Taking screenshot of Electron application', {
     outputPath,
@@ -51,7 +52,7 @@ export async function takeScreenshot(
     if (targetId) {
       // Search for exact targetId match across all apps
       for (const app of apps) {
-        const match = app.targets.find((t: any) => t.id === targetId);
+        const match = app.targets.find((target: DevToolsTarget) => target.id === targetId);
         if (match) {
           targetApp = app;
           targetInfo = { port: app.port, targetId: match.id };
@@ -68,8 +69,8 @@ export async function takeScreenshot(
       // Search for case-insensitive partial title match
       const searchTitle = windowTitle.toLowerCase();
       for (const app of apps) {
-        const match = app.targets.find(
-          (t: any) => t.title && t.title.toLowerCase().includes(searchTitle),
+        const match = app.targets.find((target: DevToolsTarget) =>
+          target.title?.toLowerCase().includes(searchTitle),
         );
         if (match) {
           targetApp = app;
@@ -85,91 +86,84 @@ export async function takeScreenshot(
       }
     }
 
-    // Connect to the Electron app's debugging port
     const browser = await chromium.connectOverCDP(`http://localhost:${targetApp.port}`);
-    const contexts = browser.contexts();
+    try {
+      const contexts = browser.contexts();
 
-    if (contexts.length === 0) {
-      throw new Error(
-        'No browser contexts found - make sure Electron app is running with remote debugging enabled',
-      );
-    }
+      if (contexts.length === 0) {
+        throw new Error(
+          'No browser contexts found - make sure Electron app is running with remote debugging enabled',
+        );
+      }
 
-    const context = contexts[0];
-    const pages = context.pages();
+      const context = contexts[0];
+      const pages = context.pages();
 
-    if (pages.length === 0) {
-      throw new Error('No pages found in the browser context');
-    }
+      if (pages.length === 0) {
+        throw new Error('No pages found in the browser context');
+      }
 
-    // Find the target page
-    let targetPage = pages[0];
+      // Find the target page
+      let targetPage = pages[0];
 
-    if (targetInfo?.targetId) {
-      // If we found a specific target, try to find the matching page
-      // Note: We need to find the page by URL/title since CDP targetId doesn't directly map to Playwright pages
-      const targetData = targetApp.targets.find((t: any) => t.id === targetInfo!.targetId);
-      if (targetData) {
+      if (targetInfo?.targetId) {
+        // If we found a specific target, try to find the matching page
+        // Note: We need to find the page by URL/title since CDP targetId doesn't directly map to Playwright pages
+        const targetData = targetApp.targets.find(
+          (target: DevToolsTarget) => target.id === targetInfo.targetId,
+        );
+        if (targetData) {
+          for (const page of pages) {
+            if (page.url() === targetData.url) {
+              targetPage = page;
+              break;
+            }
+          }
+        }
+      } else {
+        // Find the main application page (skip DevTools pages)
         for (const page of pages) {
-          const pageUrl = page.url();
-          // Match by URL since that's more reliable than title
-          if (pageUrl === targetData.url) {
+          const url = page.url();
+          const title = await page.title().catch(() => '');
+
+          // Skip DevTools and about:blank pages
+          if (
+            !url.includes('devtools://') &&
+            !url.includes('about:blank') &&
+            title &&
+            !title.includes('DevTools')
+          ) {
             targetPage = page;
             break;
           }
         }
       }
-    } else {
-      // Find the main application page (skip DevTools pages)
-      for (const page of pages) {
-        const url = page.url();
-        const title = await page.title().catch(() => '');
 
-        // Skip DevTools and about:blank pages
-        if (
-          !url.includes('devtools://') &&
-          !url.includes('about:blank') &&
-          title &&
-          !title.includes('DevTools')
-        ) {
-          targetPage = page;
-          break;
-        }
+      logger.info(`Taking screenshot of page: ${targetPage.url()} (${await targetPage.title()})`);
+
+      // Take screenshot as buffer (in memory)
+      const screenshotBuffer = await targetPage.screenshot({ type: 'png', fullPage: false });
+      logger.info(`Screenshot captured successfully (${screenshotBuffer.length} bytes)`);
+
+      if (delivery === 'file') {
+        const filePath = outputPath ?? path.join(os.tmpdir(), `debug-electron-${Date.now()}.png`);
+        await fs.writeFile(filePath, screenshotBuffer);
+        return { kind: 'file', filePath, bytes: screenshotBuffer.length };
       }
-    }
 
-    logger.info(`Taking screenshot of page: ${targetPage.url()} (${await targetPage.title()})`);
-
-    // Take screenshot as buffer (in memory)
-    const screenshotBuffer = await targetPage.screenshot({
-      type: 'png',
-      fullPage: false,
-    });
-
-    await browser.close();
-
-    // Convert buffer to base64 for transmission
-    const base64Data = screenshotBuffer.toString('base64');
-    logger.info(`Screenshot captured successfully (${screenshotBuffer.length} bytes)`);
-
-    // If outputPath is provided, save to file
-    if (outputPath) {
-      await fs.writeFile(outputPath, screenshotBuffer);
       return {
-        filePath: outputPath,
-        base64: base64Data,
-        data: `Screenshot saved to: ${outputPath}`,
+        kind: 'inline',
+        base64: screenshotBuffer.toString('base64'),
+        bytes: screenshotBuffer.length,
       };
-    } else {
-      return {
-        base64: base64Data,
-        data: `Screenshot captured as base64 data (${screenshotBuffer.length} bytes)`,
-      };
+    } finally {
+      await browser.close();
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Screenshot failed: ${errorMessage}. Make sure the Electron app is running with remote debugging enabled (--remote-debugging-port=9222)`,
+      { cause: error },
     );
   }
 }

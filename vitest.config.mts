@@ -1,6 +1,8 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'path';
 
+const root = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -14,7 +16,7 @@ export default defineConfig({
       '**/cypress/**',
       '**/.{idea,git,cache,output,temp}/**',
       '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
-      '**/setup.ts', // Exclude setup file from being run as a test
+      '**/setup.ts',
     ],
     coverage: {
       provider: 'v8',
@@ -29,14 +31,14 @@ export default defineConfig({
         '**/coverage/**',
       ],
     },
-    testTimeout: 10000,
-    hookTimeout: 10000,
-    teardownTimeout: 5000,
+    testTimeout: 10_000,
+    hookTimeout: 10_000,
+    teardownTimeout: 5_000,
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
-      '@test': resolve(__dirname, './test'),
+      '@': resolve(root, 'src'),
+      '@test': resolve(root, 'test'),
     },
   },
 });

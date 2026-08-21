@@ -1,6 +1,11 @@
-import { exec } from 'child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'util';
-import { findElectronTarget, connectForLogs, WindowTargetOptions } from './electron-connection';
+import {
+  findElectronTarget,
+  connectForLogs,
+  type WindowTargetOptions,
+} from './electron-connection';
+import type { DevToolsTarget } from './electron-discovery';
 import { logger } from './logger';
 
 export type LogType = 'console' | 'main' | 'renderer' | 'all';
@@ -16,13 +21,11 @@ export interface LogEntry {
  * Read logs from running Electron applications
  * @param logType - Type of logs to read
  * @param lines - Number of recent lines to read
- * @param follow - Whether to follow/tail the logs
  * @param ports - Optional list of specific ports to scan
  */
 export async function readElectronLogs(
   logType: LogType = 'all',
   lines: number = 100,
-  follow: boolean = false,
   ports?: number[],
 ): Promise<string> {
   try {
@@ -34,7 +37,7 @@ export async function readElectronLogs(
 
       // Connect via WebSocket to get console logs
       if (logType === 'console' || logType === 'all') {
-        return await getConsoleLogsViaDevTools(target, lines, follow);
+        return await getConsoleLogsViaDevTools(target, lines);
       }
     } catch {
       logger.info('[MCP] No DevTools connection found, checking system logs...');
@@ -45,6 +48,7 @@ export async function readElectronLogs(
   } catch (error) {
     throw new Error(
       `Failed to read logs: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -52,49 +56,26 @@ export async function readElectronLogs(
 /**
  * Get console logs via Chrome DevTools Protocol
  */
-async function getConsoleLogsViaDevTools(
-  target: any,
-  lines: number,
-  follow: boolean,
-): Promise<string> {
+async function getConsoleLogsViaDevTools(target: DevToolsTarget, lines: number): Promise<string> {
   const logs: string[] = [];
-
-  return new Promise((resolve, reject) => {
-    (async () => {
-      try {
-        const ws = await connectForLogs(target, (log: string) => {
-          logs.push(log);
-          if (logs.length >= lines && !follow) {
-            ws.close();
-            resolve(logs.slice(-lines).join('\n'));
-          }
-        });
-
-        // For non-follow mode, try to get console history first
-        if (!follow) {
-          // Request console API calls from Runtime
-          ws.send(
-            JSON.stringify({
-              id: 99,
-              method: 'Runtime.evaluate',
-              params: {
-                expression: `console.log("Reading console history for MCP test"); "History checked"`,
-                includeCommandLineAPI: true,
-              },
-            }),
-          );
-
-          // Wait longer for logs to be captured and history to be available
-          setTimeout(() => {
-            ws.close();
-            resolve(logs.length > 0 ? logs.slice(-lines).join('\n') : 'No console logs available');
-          }, 7000); // Increased timeout to 7 seconds
-        }
-      } catch (error) {
-        reject(error);
-      }
-    })();
-  });
+  const ws = await connectForLogs(target, (log: string) => logs.push(log));
+  try {
+    ws.send(
+      JSON.stringify({
+        id: 99,
+        method: 'Runtime.evaluate',
+        params: {
+          expression: `console.log("MCP log snapshot"); "snapshot"`,
+          includeCommandLineAPI: true,
+          awaitPromise: true,
+        },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return logs.length > 0 ? logs.slice(-lines).join('\n') : 'No console logs available';
+  } finally {
+    ws.close();
+  }
 }
 
 /**
@@ -103,15 +84,21 @@ async function getConsoleLogsViaDevTools(
 async function getSystemElectronLogs(lines: number = 100): Promise<string> {
   logger.info('[MCP] Reading system logs for Electron processes...');
 
-  try {
-    const execAsync = promisify(exec);
+  if (process.platform !== 'darwin') {
+    return (
+      `System Electron log fallback is unavailable on ${process.platform}. ` +
+      'Start Electron with --remote-debugging-port=9222 to read a bounded console snapshot.'
+    );
+  }
 
-    // Get running Electron processes
-    const { stdout } = await execAsync('ps aux | grep -i electron | grep -v grep');
+  try {
+    const execFileAsync = promisify(execFile);
+
+    const { stdout } = await execFileAsync('ps', ['aux']);
     const electronProcesses = stdout
       .trim()
       .split('\n')
-      .filter((line) => line.length > 0);
+      .filter((line) => /electron/i.test(line) && !/Visual Studio Code/i.test(line));
 
     if (electronProcesses.length === 0) {
       return 'No Electron processes found running on the system.';
@@ -129,10 +116,17 @@ async function getSystemElectronLogs(lines: number = 100): Promise<string> {
     });
 
     try {
-      const { stdout: logContent } = await execAsync(
-        `log show --last 1h --predicate 'process == "Electron"' --style compact | tail -${lines}`,
-      );
-      if (logContent.trim()) {
+      const { stdout: allLogContent } = await execFileAsync('log', [
+        'show',
+        '--last',
+        '1h',
+        '--predicate',
+        'process == "Electron"',
+        '--style',
+        'compact',
+      ]);
+      const logContent = allLogContent.trim().split('\n').slice(-lines).join('\n');
+      if (logContent) {
         logOutput += 'Recent Electron logs from system:\n';
         logOutput += '==========================================\n';
         logOutput += logContent;

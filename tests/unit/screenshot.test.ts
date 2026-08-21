@@ -135,7 +135,11 @@ describe('Screenshot Module', () => {
             const result = await takeScreenshot({ outputPath: '/tmp/screenshot.png' });
 
             expect(mockedWriteFile).toHaveBeenCalledWith('/tmp/screenshot.png', screenshotBuffer);
-            expect(result.filePath).toBe('/tmp/screenshot.png');
+            expect(result.kind).toBe('file');
+            if (result.kind === 'file') {
+                expect(result.filePath).toBe('/tmp/screenshot.png');
+                expect('base64' in result).toBe(false);
+            }
         });
 
         it('should find window by targetId when specified', async () => {

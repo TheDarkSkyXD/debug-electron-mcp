@@ -382,7 +382,7 @@ export function generateClickByTextCommand(text: string): string {
         const title = analysis.title.toLowerCase().trim();
         const targetLower = target.toLowerCase().trim();
         if (!targetLower) return 0;
-        const targetWords = targetLower.split(/\s+/).filter(w => w.length > 0);
+        const targetWords = targetLower.split(/\\s+/).filter(w => w.length > 0);
         
         // === EXACT MATCHES (highest priority) ===
         // Case-sensitive exact match (highest confidence)
@@ -397,9 +397,9 @@ export function generateClickByTextCommand(text: string): string {
         
         // === WORD-BOUNDARY MATCHES ===
         // Check if target words appear as complete words in the element
-        const textWords = text.split(/\s+/).filter(w => w.length > 0);
-        const labelWords = label.split(/\s+/).filter(w => w.length > 0);
-        const titleWords = title.split(/\s+/).filter(w => w.length > 0);
+        const textWords = text.split(/\\s+/).filter(w => w.length > 0);
+        const labelWords = label.split(/\\s+/).filter(w => w.length > 0);
+        const titleWords = title.split(/\\s+/).filter(w => w.length > 0);
         
         // Count how many target words are found as complete words
         let matchedWords = 0;

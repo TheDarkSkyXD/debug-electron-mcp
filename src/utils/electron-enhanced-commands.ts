@@ -14,12 +14,12 @@ export interface CommandArgs {
   message?: string;
   code?: string;
   // New properties for additional tools
-  duration?: number;          // For wait command (milliseconds)
-  timeout?: number;           // For wait command timeout
-  startSelector?: string;     // For drag command - source element
-  endSelector?: string;       // For drag command - target element
-  attribute?: string;         // For get_attribute command
-  slowly?: boolean;           // For type command - type character by character
+  duration?: number; // For wait command (milliseconds)
+  timeout?: number; // For wait command timeout
+  startSelector?: string; // For drag command - source element
+  endSelector?: string; // For drag command - target element
+  attribute?: string; // For get_attribute command
+  slowly?: boolean; // For type command - type character by character
 }
 
 /**
@@ -804,14 +804,15 @@ export async function sendCommandToElectron(
               }
               
               let result;
-              ${rawCode.trim().startsWith('() =>') || rawCode.trim().startsWith('function')
-            ? `result = (${rawCode})();`
-            : rawCode.includes('return')
-              ? `result = (function() { ${rawCode} })();`
-              : rawCode.includes(';')
-                ? `result = (function() { ${rawCode}; return "executed"; })();`
-                : `result = (function() { return (${rawCode}); })();`
-          }
+              ${
+                rawCode.trim().startsWith('() =>') || rawCode.trim().startsWith('function')
+                  ? `result = (${rawCode})();`
+                  : rawCode.includes('return')
+                    ? `result = (function() { ${rawCode} })();`
+                    : rawCode.includes(';')
+                      ? `result = (function() { ${rawCode}; return "executed"; })();`
+                      : `result = (function() { return (${rawCode}); })();`
+              }
               
               setTimeout(() => {
                 if (!isStateTest && window._mcpExecuting) {
@@ -856,11 +857,13 @@ export async function sendCommandToElectron(
         const parsedResult = JSON.parse(rawResult);
         if (parsedResult && typeof parsedResult === 'object' && 'success' in parsedResult) {
           if (!parsedResult.success) {
-            return `❌ Command failed: ${parsedResult.error}${parsedResult.stack ? '\nStack: ' + parsedResult.stack : ''
-              }`;
-          }
-          return `✅ Command successful${parsedResult.result !== null ? ': ' + JSON.stringify(parsedResult.result) : ''
+            return `Command failed: ${parsedResult.error}${
+              parsedResult.stack ? '\nStack: ' + parsedResult.stack : ''
             }`;
+          }
+          return `Command successful${
+            parsedResult.result !== null ? ': ' + JSON.stringify(parsedResult.result) : ''
+          }`;
         }
       } catch {
         // If it's not JSON, treat as regular result
@@ -869,14 +872,16 @@ export async function sendCommandToElectron(
 
     // Handle regular results
     if (rawResult === 'undefined' || rawResult === 'null' || rawResult === '') {
-      return `⚠️ Command executed but returned ${rawResult || 'empty'
-        } - this may indicate the element wasn't found or the action failed`;
+      return `Warning: Command executed but returned ${
+        rawResult || 'empty'
+      } - this may indicate the element wasn't found or the action failed`;
     }
 
-    return `✅ Result: ${rawResult}`;
+    return `Result: ${rawResult}`;
   } catch (error) {
     throw new Error(
       `Failed to send command: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }

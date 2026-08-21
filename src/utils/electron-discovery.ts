@@ -4,7 +4,16 @@ import { logger } from './logger';
 
 export interface ElectronAppInfo {
   port: number;
-  targets: any[];
+  targets: DevToolsTarget[];
+}
+
+export interface DevToolsTarget {
+  id: string;
+  title?: string;
+  url?: string;
+  type: string;
+  description?: string;
+  webSocketDebuggerUrl?: string;
 }
 
 export interface WindowInfo {
@@ -31,7 +40,7 @@ export interface ElectronWindowResult {
   windows: WindowInfo[];
   totalTargets: number;
   electronTargets: number;
-  processInfo?: any;
+  processInfo?: unknown;
   message: string;
   automationReady: boolean;
 }
@@ -41,47 +50,66 @@ export interface ElectronWindowResult {
  * @param ports - Optional list of specific ports to scan. When provided, only these ports are checked.
  *                When omitted, scans the default hardcoded port ranges.
  */
-export async function scanForElectronApps(ports?: number[]): Promise<ElectronAppInfo[]> {
-  logger.debug('Scanning for running Electron applications...');
+const DEFAULT_PORTS = [
+  9200, 9201, 9202, 9203, 9204, 9205, 9222, 9223, 9224, 9225, 9300, 9301, 9302, 9303, 9304, 9305,
+  9400, 9401, 9402, 9403, 9404, 9405,
+] as const;
+const DISCOVERY_CONCURRENCY = 6;
 
-  const portsToScan = ports ?? [
-    9222, 9223, 9224, 9225, // Default ports
-    9200, 9201, 9202, 9203, 9204, 9205, // Security test range
-    9300, 9301, 9302, 9303, 9304, 9305, // Integration test range
-    9400, 9401, 9402, 9403, 9404, 9405, // Additional range
-  ];
-  const foundApps: ElectronAppInfo[] = [];
+function isDevToolsTarget(value: unknown): value is DevToolsTarget {
+  if (!value || typeof value !== 'object') return false;
+  const target = value as Record<string, unknown>;
+  return typeof target.id === 'string' && typeof target.type === 'string';
+}
 
-  for (const port of portsToScan) {
-    try {
-      const response = await fetch(`http://localhost:${port}/json`, {
-        signal: AbortSignal.timeout(1000),
-      });
-
-      if (response.ok) {
-        const targets = await response.json();
-        const pageTargets = targets.filter((target: any) => target.type === 'page');
-
-        if (pageTargets.length > 0) {
-          foundApps.push({
-            port,
-            targets: pageTargets,
-          });
-          logger.debug(`Found Electron app on port ${port} with ${pageTargets.length} windows`);
-        }
-      }
-    } catch {
-      // Continue to next port
-    }
+async function scanPort(port: number): Promise<ElectronAppInfo | undefined> {
+  try {
+    const response = await fetch(`http://localhost:${port}/json`, {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!response.ok) return undefined;
+    const body: unknown = await response.json();
+    if (!Array.isArray(body)) return undefined;
+    const targets = body.filter(isDevToolsTarget).filter((target) => target.type === 'page');
+    return targets.length > 0 ? { port, targets } : undefined;
+  } catch {
+    return undefined;
   }
+}
 
-  return foundApps;
+async function mapBounded<T, R>(
+  items: readonly T[],
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DISCOVERY_CONCURRENCY, items.length) }, worker));
+  return results;
+}
+
+export async function scanForElectronApps(ports?: readonly number[]): Promise<ElectronAppInfo[]> {
+  logger.debug('Scanning for running Electron applications...');
+  const scanned = await mapBounded(ports ?? DEFAULT_PORTS, scanPort);
+  return scanned
+    .filter((app): app is ElectronAppInfo => app !== undefined)
+    .sort((left, right) => left.port - right.port)
+    .map((app) => ({
+      ...app,
+      targets: [...app.targets].sort((left, right) => left.id.localeCompare(right.id)),
+    }));
 }
 
 /**
  * Get detailed process information for running Electron applications
  */
-export async function getElectronProcessInfo(): Promise<any> {
+export async function getElectronProcessInfo(): Promise<Record<string, unknown>> {
   const execAsync = promisify(exec);
 
   try {
@@ -113,10 +141,11 @@ export async function getElectronProcessInfo(): Promise<any> {
 /**
  * Find the main target from a list of targets
  */
-export function findMainTarget(targets: any[]): any | null {
+export function findMainTarget(targets: DevToolsTarget[]): DevToolsTarget | null {
   return (
-    targets.find((target: any) => target.type === 'page' && !target.title.includes('DevTools')) ||
-    targets.find((target: any) => target.type === 'page')
+    targets.find((target) => target.type === 'page' && !target.title?.includes('DevTools')) ||
+    targets.find((target) => target.type === 'page') ||
+    null
   );
 }
 
@@ -128,7 +157,7 @@ export function findMainTarget(targets: any[]): any | null {
  */
 export async function listElectronWindows(
   includeDevTools: boolean = false,
-  ports?: number[],
+  ports?: readonly number[],
 ): Promise<ElectronWindowTarget[]> {
   const foundApps = await scanForElectronApps(ports);
   const windows: ElectronWindowTarget[] = [];
@@ -149,7 +178,7 @@ export async function listElectronWindows(
     }
   }
 
-  return windows;
+  return windows.sort((left, right) => left.port - right.port || left.id.localeCompare(right.id));
 }
 
 /**
@@ -159,7 +188,7 @@ export async function listElectronWindows(
  */
 export async function getElectronWindowInfo(
   includeChildren: boolean = false,
-  ports?: number[],
+  ports?: readonly number[],
 ): Promise<ElectronWindowResult> {
   try {
     const foundApps = await scanForElectronApps(ports);
@@ -177,13 +206,13 @@ export async function getElectronWindowInfo(
 
     // Use the first found app
     const app = foundApps[0];
-    const windows: WindowInfo[] = app.targets.map((target: any) => ({
+    const windows: WindowInfo[] = app.targets.map((target) => ({
       id: target.id,
-      title: target.title,
-      url: target.url,
+      title: target.title ?? '',
+      url: target.url ?? '',
       type: target.type,
       description: target.description || '',
-      webSocketDebuggerUrl: target.webSocketDebuggerUrl,
+      webSocketDebuggerUrl: target.webSocketDebuggerUrl ?? '',
     }));
 
     // Get additional process information

@@ -1,14 +1,8 @@
 import WebSocket from 'ws';
-import { scanForElectronApps, findMainTarget } from './electron-discovery';
+import { scanForElectronApps, findMainTarget, type DevToolsTarget } from './electron-discovery';
 import { logger } from './logger';
 
-export interface DevToolsTarget {
-  id: string;
-  title: string;
-  url: string;
-  webSocketDebuggerUrl: string;
-  type: string;
-}
+export type { DevToolsTarget } from './electron-discovery';
 
 export interface CommandResult {
   success: boolean;
@@ -24,7 +18,7 @@ export interface WindowTargetOptions {
   /** Window title (case-insensitive partial match) */
   windowTitle?: string;
   /** Specific ports to scan (overrides default port scanning) */
-  ports?: number[];
+  ports?: readonly number[];
 }
 
 /**
@@ -50,14 +44,14 @@ export async function findElectronTarget(options?: WindowTargetOptions): Promise
   // If targetId is specified, search all apps for exact ID match
   if (options?.targetId) {
     for (const app of foundApps) {
-      const match = app.targets.find((t: any) => t.id === options.targetId);
+      const match = app.targets.find((target) => target.id === options.targetId);
       if (match) {
         logger.debug(`Found target by ID "${options.targetId}" on port ${app.port}`);
         return {
           id: match.id,
-          title: match.title,
-          url: match.url,
-          webSocketDebuggerUrl: match.webSocketDebuggerUrl,
+          title: match.title ?? '',
+          url: match.url ?? '',
+          webSocketDebuggerUrl: match.webSocketDebuggerUrl ?? '',
           type: match.type,
         };
       }
@@ -71,16 +65,14 @@ export async function findElectronTarget(options?: WindowTargetOptions): Promise
   if (options?.windowTitle) {
     const searchTitle = options.windowTitle.toLowerCase();
     for (const app of foundApps) {
-      const match = app.targets.find(
-        (t: any) => t.title && t.title.toLowerCase().includes(searchTitle),
-      );
+      const match = app.targets.find((target) => target.title?.toLowerCase().includes(searchTitle));
       if (match) {
         logger.debug(`Found target by title "${options.windowTitle}" on port ${app.port}`);
         return {
           id: match.id,
-          title: match.title,
-          url: match.url,
-          webSocketDebuggerUrl: match.webSocketDebuggerUrl,
+          title: match.title ?? '',
+          url: match.url ?? '',
+          webSocketDebuggerUrl: match.webSocketDebuggerUrl ?? '',
           type: match.type,
         };
       }
@@ -102,9 +94,9 @@ export async function findElectronTarget(options?: WindowTargetOptions): Promise
 
   return {
     id: mainTarget.id,
-    title: mainTarget.title,
-    url: mainTarget.url,
-    webSocketDebuggerUrl: mainTarget.webSocketDebuggerUrl,
+    title: mainTarget.title ?? '',
+    url: mainTarget.url ?? '',
+    webSocketDebuggerUrl: mainTarget.webSocketDebuggerUrl ?? '',
     type: mainTarget.type,
   };
 }
@@ -118,13 +110,15 @@ export async function executeInElectron(
 ): Promise<string> {
   const targetInfo = target || (await findElectronTarget());
 
-  if (!targetInfo.webSocketDebuggerUrl) {
+  const webSocketDebuggerUrl = targetInfo.webSocketDebuggerUrl;
+  if (!webSocketDebuggerUrl) {
     throw new Error('No WebSocket debugger URL available');
   }
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(targetInfo.webSocketDebuggerUrl);
-    const messageId = Math.floor(Math.random() * 1000000);
+    const ws = new WebSocket(webSocketDebuggerUrl);
+    const runtimeEnableMessageId = 1;
+    const messageId = 2;
 
     const timeout = setTimeout(() => {
       ws.close();
@@ -137,7 +131,7 @@ export async function executeInElectron(
       // Enable Runtime domain first
       ws.send(
         JSON.stringify({
-          id: 1,
+          id: runtimeEnableMessageId,
           method: 'Runtime.enable',
         }),
       );
@@ -149,7 +143,7 @@ export async function executeInElectron(
         params: {
           expression: javascriptCode,
           returnByValue: true,
-          awaitPromise: false,
+          awaitPromise: true,
         },
       };
 
@@ -190,35 +184,35 @@ export async function executeInElectron(
             logger.debug(`Execution result type: ${result?.type}, value:`, result?.value);
 
             if (result.type === 'string') {
-              resolve(`✅ Command executed: ${result.value}`);
+              resolve(`Command executed: ${result.value}`);
             } else if (result.type === 'number') {
-              resolve(`✅ Result: ${result.value}`);
+              resolve(`Result: ${result.value}`);
             } else if (result.type === 'boolean') {
-              resolve(`✅ Result: ${result.value}`);
+              resolve(`Result: ${result.value}`);
             } else if (result.type === 'undefined') {
-              resolve(`✅ Command executed successfully`);
+              resolve(`Command executed successfully`);
             } else if (result.type === 'object') {
               if (result.value === null) {
-                resolve(`✅ Result: null`);
+                resolve(`Result: null`);
               } else if (result.value === undefined) {
-                resolve(`✅ Result: undefined`);
+                resolve(`Result: undefined`);
               } else {
                 try {
-                  resolve(`✅ Result: ${JSON.stringify(result.value, null, 2)}`);
+                  resolve(`Result: ${JSON.stringify(result.value, null, 2)}`);
                 } catch {
                   resolve(
-                    `✅ Result: [Object - could not serialize: ${
+                    `Result: [Object - could not serialize: ${
                       result.className || result.objectId || 'unknown'
                     }]`,
                   );
                 }
               }
             } else {
-              resolve(`✅ Result type ${result.type}: ${result.description || 'no description'}`);
+              resolve(`Result type ${result.type}: ${result.description || 'no description'}`);
             }
           } else {
             logger.debug(`No result in response:`, response);
-            resolve(`✅ Command sent successfully`);
+            resolve(`Command sent successfully`);
           }
         }
       } catch (error) {
@@ -229,6 +223,7 @@ export async function executeInElectron(
 
     ws.on('error', (error) => {
       clearTimeout(timeout);
+      ws.close();
       reject(new Error(`WebSocket error: ${error.message}`));
     });
   });
@@ -243,12 +238,13 @@ export async function connectForLogs(
 ): Promise<WebSocket> {
   const targetInfo = target || (await findElectronTarget());
 
-  if (!targetInfo.webSocketDebuggerUrl) {
+  const webSocketDebuggerUrl = targetInfo.webSocketDebuggerUrl;
+  if (!webSocketDebuggerUrl) {
     throw new Error('No WebSocket debugger URL available for log connection');
   }
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(targetInfo.webSocketDebuggerUrl);
+    const ws = new WebSocket(webSocketDebuggerUrl);
 
     ws.on('open', () => {
       logger.debug(`Connected for log monitoring to: ${targetInfo.title}`);
@@ -282,6 +278,7 @@ export async function connectForLogs(
     });
 
     ws.on('error', (error) => {
+      ws.close();
       reject(new Error(`WebSocket error: ${error.message}`));
     });
   });

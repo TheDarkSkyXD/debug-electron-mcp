@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomUUID } from 'node:crypto';
 import { logger } from './utils/logger';
 
 export interface ProjectConfig {
@@ -16,13 +17,13 @@ export interface RegistryConfig {
 const DEFAULT_PORT_RANGE: [number, number] = [9222, 9322];
 const CONFIG_FILENAME = '.debug-electron-mcp.json';
 
-class ProjectRegistry {
+export class ProjectRegistry {
   private config: RegistryConfig;
-  private configPath: string;
-  private static instance: ProjectRegistry;
+  private readonly configPath: string;
+  private static instance: ProjectRegistry | undefined;
 
-  private constructor() {
-    this.configPath = path.join(os.homedir(), CONFIG_FILENAME);
+  constructor(configPath = path.join(os.homedir(), CONFIG_FILENAME)) {
+    this.configPath = configPath;
     this.config = {
       portRange: DEFAULT_PORT_RANGE,
       projects: {},
@@ -40,40 +41,48 @@ class ProjectRegistry {
   register(name: string, port?: number, windowTitlePattern?: string): ProjectConfig {
     if (this.config.projects[name]) {
       const existing = this.config.projects[name];
-      // Update windowTitlePattern if provided
-      if (windowTitlePattern !== undefined) {
-        existing.windowTitlePattern = windowTitlePattern;
-        this.save();
-      }
-      return existing;
+      if (windowTitlePattern === undefined) return { ...existing };
+
+      const updated = { ...existing, windowTitlePattern };
+      this.persist({
+        ...this.config,
+        projects: { ...this.config.projects, [name]: updated },
+      });
+      return { ...updated };
     }
 
     const assignedPort = port ?? this.getNextFreePort();
     const projectConfig: ProjectConfig = { port: assignedPort };
-    if (windowTitlePattern) {
+    if (windowTitlePattern !== undefined) {
       projectConfig.windowTitlePattern = windowTitlePattern;
     }
 
-    this.config.projects[name] = projectConfig;
-    this.save();
-    return projectConfig;
+    this.persist({
+      ...this.config,
+      projects: { ...this.config.projects, [name]: projectConfig },
+    });
+    return { ...projectConfig };
   }
 
   unregister(name: string): boolean {
     if (!this.config.projects[name]) {
       return false;
     }
-    delete this.config.projects[name];
-    this.save();
+    const projects = { ...this.config.projects };
+    delete projects[name];
+    this.persist({ ...this.config, projects });
     return true;
   }
 
   resolve(name: string): ProjectConfig | undefined {
-    return this.config.projects[name];
+    const project = this.config.projects[name];
+    return project ? { ...project } : undefined;
   }
 
   list(): Record<string, ProjectConfig> {
-    return { ...this.config.projects };
+    return Object.fromEntries(
+      Object.entries(this.config.projects).map(([name, project]) => [name, { ...project }]),
+    );
   }
 
   getNextFreePort(): number {
@@ -92,11 +101,31 @@ class ProjectRegistry {
   }
 
   save(): void {
+    this.writeAtomic(this.config);
+  }
+
+  private persist(nextConfig: RegistryConfig): void {
+    this.writeAtomic(nextConfig);
+    this.config = nextConfig;
+  }
+
+  private writeAtomic(config: RegistryConfig): void {
+    const temporaryPath = `${this.configPath}.${process.pid}.${randomUUID()}.tmp`;
     try {
-      fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
+      fs.writeFileSync(temporaryPath, JSON.stringify(config, null, 2), {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
+      fs.renameSync(temporaryPath, this.configPath);
       logger.debug(`Registry saved to ${this.configPath}`);
     } catch (error) {
+      try {
+        fs.unlinkSync(temporaryPath);
+      } catch {
+        // The temporary file may not exist or may already have been renamed.
+      }
       logger.error(`Failed to save registry:`, error);
+      throw new Error(`Failed to save registry at ${this.configPath}`, { cause: error });
     }
   }
 
