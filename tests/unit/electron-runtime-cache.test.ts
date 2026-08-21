@@ -311,6 +311,28 @@ describe('CDP connection pool', () => {
     expect(cdp.connectionCount()).toBe(2);
   });
 
+  it('coalesces concurrent evaluations after a remote close', async () => {
+    const cdp = await createCdpServer();
+    servers.push(cdp.server);
+    const pool = new CdpConnectionPool({ idleTtlMs: 5_000, maxConnections: 4 });
+    pools.push(pool);
+
+    await pool.evaluate(cdp.url, '1');
+    const activeClient = cdp.server.clients.values().next().value;
+    if (!activeClient) throw new Error('Expected an active test connection.');
+    activeClient.close();
+    await once(activeClient, 'close');
+
+    await Promise.all([
+      pool.evaluate(cdp.url, '2'),
+      pool.evaluate(cdp.url, '3'),
+      pool.evaluate(cdp.url, '4'),
+    ]);
+
+    expect(cdp.connectionCount()).toBe(2);
+    expect(cdp.evaluationCount()).toBe(4);
+  });
+
   it('evicts idle connections after the configured TTL', async () => {
     const cdp = await createCdpServer();
     servers.push(cdp.server);

@@ -93,7 +93,10 @@ export class CdpConnectionPool {
       this.acquire(url, existing);
       return existing.session;
     }
-    if (existing?.kind === 'ready') await this.evict(url, existing.session);
+    if (existing?.kind === 'ready') {
+      await this.evict(url, existing.session);
+      return this.getSession(url);
+    }
 
     const connecting = this.reserveConnection(url);
     const { connection } = connecting;
