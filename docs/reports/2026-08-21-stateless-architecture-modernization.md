@@ -4,7 +4,7 @@
 
 Completed on 2026-08-21. The TypeScript 7 work starts at `1d7d577`, and the architecture refactor starts at `3c3c681`. This report includes the reviewed follow-up fixes.
 
-The MCP server uses the MCP `2026-07-28` stateless lifecycle and the native TypeScript 7 compiler. The architecture now enforces dependency direction, and the common tool catalog uses 45.3 percent fewer estimated tokens than the recorded baseline.
+The MCP server uses the MCP `2026-07-28` stateless lifecycle and the native TypeScript 7 compiler. The architecture now enforces dependency direction, the common tool catalog uses 45.3 percent fewer estimated tokens than the recorded baseline, and sequential Electron calls reuse bounded adapter-local discovery and CDP resources.
 
 ## Delivered changes
 
@@ -38,10 +38,14 @@ The MCP server uses the MCP `2026-07-28` stateless lifecycle and the native Type
 ### Response speed
 
 - Electron port probes run with bounded concurrency and stable output ordering.
+- Identical discovery requests share a five-second cache with a 16-entry limit and concurrent request coalescing.
+- Sequential commands reuse an open CDP WebSocket for up to 15 idle seconds, with an eight-connection limit and least-recently-used eviction.
+- Concurrent evaluations on one socket use distinct DevTools Protocol message IDs.
+- Stale discovery is invalidated and retried only when the CDP connection cannot open. An evaluation that may have reached Electron is never replayed.
 - `get_electron_window_info` no longer starts the legacy `ps aux` subprocess.
 - CDP returns a validated raw evaluation result. The command executor formats that result once.
 - Renderer inputs fail before Electron discovery or a CDP connection begins.
-- `scripts/measure-mcp.mjs` now measures live loopback HTTP operations as well as discovery concurrency and catalog size.
+- `scripts/measure-mcp.mjs` now measures live loopback HTTP operations, discovery concurrency, catalog size, and sequential warm-path reuse.
 
 ### TypeScript and package maintenance
 
@@ -100,6 +104,17 @@ The controlled benchmark probes six ports with a fixed 20 ms response delay.
 
 Bounded parallel discovery is about 5.9 times faster in this benchmark.
 
+### Sequential Electron call latency
+
+This controlled loopback benchmark makes one cold call followed by 20 warm calls. Discovery probes six endpoints with a fixed 20 ms response delay. CDP evaluates a trivial expression against a local WebSocket server.
+
+| Stage | Cold call | Warm median | Warm p95 | Reuse evidence |
+| --- | ---: | ---: | ---: | --- |
+| Electron discovery | 23.86 ms | 0.0028 ms | 0.0082 ms | 6 network probes total across all 21 scans |
+| CDP evaluation | 7.79 ms | 0.1676 ms | 0.2416 ms | 1 WebSocket connection for all 21 evaluations |
+
+The warm calls avoid both repeated port probing and repeated WebSocket handshakes. These numbers isolate the MCP adapter overhead; real commands still include renderer execution time and any model time between tool calls. If the gap between calls exceeds the five-second discovery TTL or 15-second CDP idle TTL, the next call safely pays the cold-path cost again.
+
 ### Build and verification
 
 | Check | Result |
@@ -135,4 +150,4 @@ npm run deps:check:mature
 npm audit
 ```
 
-The architecture decision is in `docs/adr/0002-enforce-responsibility-boundaries.md`. Protocol research is in `docs/research/mcp-2026-release-candidate.md`.
+The architecture decisions are in `docs/adr/0002-enforce-responsibility-boundaries.md` and `docs/adr/0003-bound-sequential-electron-reuse.md`. Protocol research is in `docs/research/mcp-2026-release-candidate.md`.

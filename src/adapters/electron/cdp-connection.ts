@@ -1,30 +1,12 @@
 import WebSocket from 'ws';
 import type { WindowTargetOptions } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
+import { CdpSession, type CdpEvaluationResult } from './cdp-session';
+import type { ElectronProbe } from './discovery-cache';
 import type { DevToolsTarget } from './devtools-types';
 import { findMainTarget, scanForElectronApps } from './discovery';
 
-export interface CdpEvaluationResult {
-  readonly type: string;
-  readonly value?: unknown;
-  readonly description?: string;
-  readonly className?: string;
-  readonly objectId?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
-}
-
-function isEvaluationResult(value: unknown): value is CdpEvaluationResult {
-  return (
-    isRecord(value) &&
-    typeof value.type === 'string' &&
-    (!('description' in value) || typeof value.description === 'string') &&
-    (!('className' in value) || typeof value.className === 'string') &&
-    (!('objectId' in value) || typeof value.objectId === 'string')
-  );
-}
+export type { CdpEvaluationResult } from './cdp-session';
 
 /**
  * Find and connect to a running Electron application.
@@ -35,10 +17,13 @@ function isEvaluationResult(value: unknown): value is CdpEvaluationResult {
  * findElectronTarget({ targetId: 'ABC123' }) // exact ID match
  * findElectronTarget({ windowTitle: 'Settings' }) // partial title match
  */
-export async function findElectronTarget(options?: WindowTargetOptions): Promise<DevToolsTarget> {
+export async function findElectronTarget(
+  options?: WindowTargetOptions,
+  probe: ElectronProbe = scanForElectronApps,
+): Promise<DevToolsTarget> {
   logger.debug('Looking for running Electron applications...');
 
-  const foundApps = await scanForElectronApps(options?.ports);
+  const foundApps = await probe(options?.ports);
 
   if (foundApps.length === 0) {
     throw new Error(
@@ -114,106 +99,16 @@ export async function executeInElectron(
   target?: DevToolsTarget,
 ): Promise<CdpEvaluationResult | undefined> {
   const targetInfo = target || (await findElectronTarget());
-
   const webSocketDebuggerUrl = targetInfo.webSocketDebuggerUrl;
-  if (!webSocketDebuggerUrl) {
-    throw new Error('No WebSocket debugger URL available');
+  if (!webSocketDebuggerUrl) throw new Error('No WebSocket debugger URL available');
+
+  const session = await CdpSession.connect(webSocketDebuggerUrl);
+  logger.debug(`Connected to ${targetInfo.title} via WebSocket`);
+  try {
+    return await session.evaluate(javascriptCode);
+  } finally {
+    await session.close();
   }
-
-  return new Promise<CdpEvaluationResult | undefined>((resolve, reject) => {
-    const ws = new WebSocket(webSocketDebuggerUrl);
-    const runtimeEnableMessageId = 1;
-    const messageId = 2;
-
-    const timeout = setTimeout(() => {
-      ws.close();
-      reject(new Error('Command execution timeout (10s)'));
-    }, 10000);
-
-    ws.on('open', () => {
-      logger.debug(`Connected to ${targetInfo.title} via WebSocket`);
-
-      // Enable Runtime domain first
-      ws.send(
-        JSON.stringify({
-          id: runtimeEnableMessageId,
-          method: 'Runtime.enable',
-        }),
-      );
-
-      // Send Runtime.evaluate command
-      const message = {
-        id: messageId,
-        method: 'Runtime.evaluate',
-        params: {
-          expression: javascriptCode,
-          returnByValue: true,
-          awaitPromise: true,
-        },
-      };
-
-      logger.debug(`Executing JavaScript code...`);
-      ws.send(JSON.stringify(message));
-    });
-
-    ws.on('message', (data) => {
-      try {
-        const response: unknown = JSON.parse(data.toString());
-        if (!isRecord(response)) return;
-
-        // Filter out noisy CDP events to reduce log spam
-        const FILTERED_CDP_METHODS = [
-          'Runtime.executionContextCreated',
-          'Runtime.consoleAPICalled',
-          'Console.messageAdded',
-          'Page.frameNavigated',
-          'Page.loadEventFired',
-        ];
-
-        // Only log CDP events if debug level is enabled and they're not filtered
-        if (
-          logger.isEnabled(3) &&
-          (typeof response.method !== 'string' || !FILTERED_CDP_METHODS.includes(response.method))
-        ) {
-          logger.debug(`CDP Response for message ${messageId}:`, JSON.stringify(response, null, 2));
-        }
-
-        if (response.id === messageId) {
-          clearTimeout(timeout);
-          ws.close();
-
-          if (isRecord(response.error)) {
-            const message =
-              typeof response.error.message === 'string'
-                ? response.error.message
-                : 'Unknown protocol error';
-            logger.error(`DevTools Protocol error:`, response.error);
-            reject(new Error(`DevTools Protocol error: ${message}`));
-          } else if (isRecord(response.result) && 'result' in response.result) {
-            const result = response.result.result;
-            if (!isEvaluationResult(result)) {
-              reject(new Error('DevTools Protocol returned a malformed evaluation result'));
-              return;
-            }
-            logger.debug(`Execution result type: ${result.type}, value:`, result.value);
-            resolve(result);
-          } else {
-            logger.debug(`No result in response:`, response);
-            resolve(undefined);
-          }
-        }
-      } catch (error) {
-        // Only treat parsing errors as warnings, not errors
-        logger.warn(`Failed to parse CDP response:`, error);
-      }
-    });
-
-    ws.on('error', (error) => {
-      clearTimeout(timeout);
-      ws.close();
-      reject(new Error(`WebSocket error: ${error.message}`));
-    });
-  });
 }
 
 /**

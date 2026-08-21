@@ -45,6 +45,7 @@ export type ScreenshotResult =
 export type LogType = 'console' | 'main' | 'renderer' | 'all';
 
 export interface ElectronAutomation {
+  close(): Promise<void>;
   discover(ports?: readonly number[]): Promise<readonly DiscoveredElectronApp[]>;
   getWindowInfo(input: {
     readonly includeChildren: boolean;

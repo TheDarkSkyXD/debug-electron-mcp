@@ -18,20 +18,45 @@ function parsePort(argv: readonly string[]): number {
   return value;
 }
 
+function registerShutdown(close: () => Promise<void>): void {
+  let closing = false;
+  const shutdown = () => {
+    if (closing) return;
+    closing = true;
+    void close()
+      .catch((error: unknown) => {
+        logger.error('Shutdown error:', error);
+        process.exitCode = 1;
+      })
+      .finally(() => process.exit());
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+}
+
 async function main(): Promise<void> {
+  const automation = createElectronAutomation();
   const dependencies = {
-    automation: createElectronAutomation(),
+    automation,
     projects: new ProjectRegistry(new JsonProjectRegistryStore()),
   };
   const createServer = () => createMcpServer(dependencies);
 
   if (process.argv.includes('serve')) {
-    await startHttpServer(createServer, parsePort(process.argv));
+    const http = await startHttpServer(createServer, parsePort(process.argv));
+    registerShutdown(async () => {
+      await http.close();
+      await automation.close();
+    });
     return;
   }
-  serveStdio(createServer, {
+  const stdio = serveStdio(createServer, {
     legacy: 'reject',
     onerror: (error) => logger.error('MCP stdio error:', error),
+  });
+  registerShutdown(async () => {
+    await stdio.close();
+    await automation.close();
   });
 }
 

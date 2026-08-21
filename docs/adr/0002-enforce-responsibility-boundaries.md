@@ -38,6 +38,8 @@ The application-facing window result omits the CDP WebSocket URL, operating-syst
 
 The source tree has more directories, but each directory states its responsibility and dependency direction. The large renderer switch remains intentionally centralized as a pure command compiler; CDP connection management no longer shares that module.
 
+ADR 0003 permits bounded discovery and CDP reuse inside the Electron adapter. The application interface exposes only `close()` for lifecycle cleanup. Cache keys, sockets, and CDP sessions do not cross the adapter boundary.
+
 ## Verification
 
 `npm run lint` proves the allowed dependency graph and rejects a synthetic application-to-adapter import. `npm run typecheck` validates the discriminated command union with TypeScript 7. Unit and integration tests cover command parsing and generation, registry persistence, Electron operations, and stateless HTTP behavior. `npm run verify:mcp` and `npm run measure:mcp` exercise the built server and report protocol and context-size evidence.

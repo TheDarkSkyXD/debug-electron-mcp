@@ -11,6 +11,7 @@ const protocolVersion = '2026-07-28';
 
 function createTestServer() {
   const automation: ElectronAutomation = {
+    close: async () => undefined,
     discover: async () => [],
     getWindowInfo: async () => ({
       windows: [],

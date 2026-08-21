@@ -4,6 +4,7 @@ import type {
   WindowInfo,
 } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
+import type { ElectronProbe } from './discovery-cache';
 import type { DevToolsTarget, ElectronAppInfo } from './devtools-types';
 
 /**
@@ -97,8 +98,9 @@ export function findMainTarget(targets: readonly DevToolsTarget[]): DevToolsTarg
 export async function listElectronWindows(
   includeDevTools: boolean = false,
   ports?: readonly number[],
+  probe: ElectronProbe = scanForElectronApps,
 ): Promise<ElectronWindowTarget[]> {
-  const foundApps = await scanForElectronApps(ports);
+  const foundApps = await probe(ports);
   const windows: ElectronWindowTarget[] = [];
 
   for (const app of foundApps) {
@@ -128,9 +130,10 @@ export async function listElectronWindows(
 export async function getElectronWindowInfo(
   includeChildren: boolean = false,
   ports?: readonly number[],
+  probe: ElectronProbe = scanForElectronApps,
 ): Promise<ElectronWindowResult> {
   try {
-    const foundApps = await scanForElectronApps(ports);
+    const foundApps = await probe(ports);
 
     if (foundApps.length === 0) {
       return {

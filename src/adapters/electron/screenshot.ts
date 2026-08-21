@@ -5,12 +5,16 @@ import * as path from 'path';
 import type { ScreenshotOptions, ScreenshotResult } from '../../application/electron-automation';
 import { logger } from '../../shared/logger';
 import type { DevToolsTarget } from './devtools-types';
+import type { ElectronProbe } from './discovery-cache';
 import { scanForElectronApps } from './discovery';
 
 /**
  * Take a screenshot of the running Electron application using Chrome DevTools Protocol
  */
-export async function takeScreenshot(options: ScreenshotOptions = {}): Promise<ScreenshotResult> {
+export async function takeScreenshot(
+  options: ScreenshotOptions = {},
+  probe: ElectronProbe = scanForElectronApps,
+): Promise<ScreenshotResult> {
   const { outputPath, targetId, windowTitle, ports } = options;
   const delivery = options.delivery ?? (outputPath ? 'file' : 'inline');
 
@@ -23,7 +27,7 @@ export async function takeScreenshot(options: ScreenshotOptions = {}): Promise<S
 
   try {
     // Find running Electron applications
-    const apps = await scanForElectronApps(ports);
+    const apps = await probe(ports);
     if (apps.length === 0) {
       throw new Error('No running Electron applications found with remote debugging enabled');
     }

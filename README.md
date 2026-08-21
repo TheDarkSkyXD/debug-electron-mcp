@@ -31,6 +31,8 @@ For a stdio client configuration:
 
 Project selection is explicit. Register a project, then pass `projectName` to a window, command, log, or screenshot call when you want to restrict the search to that app.
 
+Nearby Electron calls reuse discovery results for 5 seconds and command CDP connections for 15 seconds. The cache and pool have fixed limits and require no MCP session or client handle.
+
 ```json
 { "projectName": "music-app", "port": 9222 }
 ```

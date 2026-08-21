@@ -5,6 +5,10 @@ import { logger } from '../../shared/logger';
 import { connectForLogs, findElectronTarget } from './cdp-connection';
 import type { DevToolsTarget } from './devtools-types';
 
+export type FindElectronTarget = (
+  options?: WindowTargetOptions,
+) => Promise<DevToolsTarget>;
+
 /**
  * Read logs from running Electron applications
  * @param logType - Type of logs to read
@@ -15,13 +19,14 @@ export async function readElectronLogs(
   logType: LogType = 'all',
   lines: number = 100,
   ports?: readonly number[],
+  findTarget: FindElectronTarget = findElectronTarget,
 ): Promise<string> {
   try {
     logger.info('[MCP] Looking for running Electron applications for log access...');
 
     try {
       const windowOptions: WindowTargetOptions | undefined = ports ? { ports } : undefined;
-      const target = await findElectronTarget(windowOptions);
+      const target = await findTarget(windowOptions);
 
       // Connect via WebSocket to get console logs
       if (logType === 'console' || logType === 'all') {

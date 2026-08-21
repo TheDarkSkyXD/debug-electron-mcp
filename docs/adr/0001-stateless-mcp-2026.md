@@ -14,7 +14,7 @@ The project registry is durable application configuration. It is not an MCP sess
 
 ## Decision
 
-The runtime has one immutable tool catalog, one explicit project registry, and one short-lived Electron operation scope per request.
+The runtime has one immutable tool catalog and one explicit project registry. Each request carries its complete operation input. Bounded, replaceable discovery and CDP resources may be reused under ADR 0003.
 
 - Build a fresh `McpServer` for each HTTP request through one server factory.
 - Use the stable MCP v2 server and Node packages with legacy protocol support rejected.
@@ -25,7 +25,7 @@ The runtime has one immutable tool catalog, one explicit project registry, and o
 - Replace the embedded Electron command manual with a compact discriminated command registry and an on-demand command-description tool.
 - Return compact structured results. Include screenshot bytes only when the caller requests inline delivery.
 - Run Electron discovery with bounded concurrency and stable output ordering.
-- Close WebSockets, Playwright browsers, and other request resources in `finally` blocks.
+- Close request-owned log WebSockets, Playwright browsers, and other request resources in `finally` blocks. Bound reusable command connections under ADR 0003.
 - Keep log reads bounded snapshots. Do not emulate continuous subscriptions through a tool call.
 - Remove dead adapters, invalid scripts, and dependencies that have no production or test caller.
 

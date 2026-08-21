@@ -3,6 +3,20 @@ import type { WindowTargetOptions } from '../../application/electron-automation'
 import { executeInElectron, findElectronTarget, type CdpEvaluationResult } from './cdp-connection';
 import { buildRendererCommand } from './renderer-command-builder';
 
+export interface ElectronCommandExecution {
+  evaluate(
+    javascriptCode: string,
+    target?: WindowTargetOptions,
+  ): Promise<CdpEvaluationResult | undefined>;
+}
+
+const directExecution: ElectronCommandExecution = {
+  evaluate: async (javascriptCode, targetOptions) => {
+    const target = await findElectronTarget(targetOptions);
+    return executeInElectron(javascriptCode, target);
+  },
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
@@ -56,11 +70,11 @@ function formatCommandResult(result: CdpEvaluationResult | undefined): string {
 export async function sendCommandToElectron(
   request: ElectronCommandRequest,
   windowOptions?: WindowTargetOptions,
+  execution: ElectronCommandExecution = directExecution,
 ): Promise<string> {
   try {
     const rendererCommand = buildRendererCommand(request);
-    const target = await findElectronTarget(windowOptions);
-    const evaluation = await executeInElectron(rendererCommand, target);
+    const evaluation = await execution.evaluate(rendererCommand, windowOptions);
     if (request.command === 'eval') {
       return formatEvaluationResult(evaluation) ?? formatCommandResult(evaluation);
     }
