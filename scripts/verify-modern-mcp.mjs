@@ -1,9 +1,11 @@
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const packageMetadata = createRequire(import.meta.url)('../package.json');
 const port = await new Promise((resolve, reject) => {
   const server = createServer();
   server.once('error', reject);
@@ -61,6 +63,10 @@ try {
   const discover = await call('server/discover', {}, 1);
   const discoverBody = await discover.json();
   if (discover.status !== 200 || discoverBody.result?.supportedVersions?.[0] !== '2026-07-28') throw new Error('server/discover did not negotiate MCP 2026.');
+  const advertisedVersion = discoverBody.result?._meta?.['io.modelcontextprotocol/serverInfo']?.version;
+  if (advertisedVersion !== packageMetadata.version) {
+    throw new Error(`server/discover advertised ${advertisedVersion}; package is ${packageMetadata.version}.`);
+  }
 
   const firstList = await call('tools/list', {}, 2, { 'mcp-session-id': 'ignored-legacy-header' });
   const firstListText = await firstList.text();
@@ -111,7 +117,7 @@ try {
   const getResponse = await fetch(`http://127.0.0.1:${port}/mcp`);
   if (getResponse.status !== 405) throw new Error('GET /mcp was accepted.');
 
-  console.log(JSON.stringify({ discover: 'ok', statelessCalls: 'ok', toolsCall: 'ok', structuredResults: 'ok', headers: 'validated', legacy: 'rejected', sessionHeader: 'absent', get: 'rejected' }));
+  console.log(JSON.stringify({ discover: 'ok', version: advertisedVersion, statelessCalls: 'ok', toolsCall: 'ok', structuredResults: 'ok', headers: 'validated', legacy: 'rejected', sessionHeader: 'absent', get: 'rejected' }));
 } finally {
   await stopChild(processHandle);
 }
