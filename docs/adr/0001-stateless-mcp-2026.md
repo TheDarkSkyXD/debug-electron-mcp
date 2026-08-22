@@ -29,7 +29,7 @@ The runtime has one immutable tool catalog and one explicit project registry. Ea
 - Keep log reads bounded snapshots. Do not emulate continuous subscriptions through a tool call.
 - Remove dead adapters, invalid scripts, and dependencies that have no production or test caller.
 
-The package maturity rule means a selected release must be at least seven days old. A repository script checks direct dependency publication dates against that floor. It replaces the unsupported npm configuration key that attempted to enforce the rule.
+The package maturity rule means every resolved release must be at least seven days old. A repository script checks all lockfile package publication dates against that floor, and targeted npm overrides constrain transitive ranges that would otherwise select newer releases. It replaces the unsupported npm configuration key that attempted to enforce the rule.
 
 ## Consequences
 
@@ -43,6 +43,6 @@ Continuous log streaming remains out of scope until it can use the protocol subs
 
 ## Verification
 
-Automated checks cover strict discovery, independent calls, ignored legacy session headers, deterministic tool lists, command schema validation, resource cleanup, and compact screenshot delivery. Measurement scripts report catalog bytes, an estimated token count, discovery latency samples, and direct-package release ages.
+Automated checks cover strict discovery, independent calls, ignored legacy session headers, deterministic tool lists, command schema validation, resource cleanup, compact screenshot delivery, and release ages for every resolved package. Measurement scripts report catalog bytes, an estimated token count, and discovery latency samples.
 
 The supporting research is in `docs/research/mcp-2026-release-candidate.md`. The competing architecture sketches are in `.audit/architecture/`.

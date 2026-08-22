@@ -26,7 +26,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "deps:check:mature": "node scripts/check-package-age.mjs",
+    "deps:check:mature": "node scripts/check-package-age.mjs --all",
     "measure:mcp": "node --import tsx scripts/measure-mcp.mjs",
     "verify:mcp": "node scripts/verify-modern-mcp.mjs",
     "lint": "eslint src tests scripts eslint.config.ts vitest.config.mts --max-warnings=0",
@@ -85,6 +85,15 @@
     "webpack": "^5.101.0",
     "webpack-cli": "^7.2.2",
     "webpack-node-externals": "^3.0.0"
+  },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.14",
+    "electron-to-chromium": "1.5.407",
+    "es-module-lexer": "2.3.1",
+    "get-tsconfig": "4.14.2",
+    "hono": "4.13.2",
+    "rolldown": "1.2.4",
+    "vite": "8.2.1"
   },
   "files": [
     "dist",

@@ -53,7 +53,7 @@ The MCP server uses the MCP `2026-07-28` stateless lifecycle and the native Type
 - `@typescript/typescript6@6.0.2` provides the compatibility package for tools that need the compiler API. The bridge exposes TypeScript 6.0.3.
 - `@boundaries/eslint-plugin@7.2.0` enforces the layer graph.
 - `eslint-import-resolver-typescript@4.4.5` resolves TypeScript imports for the boundary rules.
-- All 31 direct dependency entries passed the seven-day minimum release-age gate on 2026-08-21.
+- All 410 resolved lockfile package entries passed the seven-day minimum release-age gate on 2026-08-22. Targeted overrides prevent permissive transitive ranges from selecting releases inside the safety window.
 - `npm audit` reported zero vulnerabilities.
 
 ### Legacy removal and safety fixes
@@ -126,7 +126,7 @@ The first two rows isolate adapter overhead. The third sends real stateless HTTP
 | Vitest | 8 files and 52 tests passed |
 | Production bundle | 149,168 bytes |
 | Live MCP verifier | Discovery, stateless calls, tool calls, structured results, headers, and legacy rejection passed |
-| Direct dependency age | 31 of 31 passed |
+| Resolved package age | 410 of 410 passed |
 | Security audit | Zero vulnerabilities |
 
 The production bundle is 55.0 percent smaller than the recorded 331,676-byte pre-modernization baseline.

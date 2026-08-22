@@ -98,7 +98,7 @@ npm run measure:mcp
 npm run verify:mcp
 ```
 
-`deps:check:mature` rejects pinned direct dependencies younger than seven days. `measure:mcp` reports the real `tools/list` payload size and a deterministic discovery benchmark.
+`deps:check:mature` rejects any resolved lockfile package younger than seven days. Targeted npm overrides keep permissive transitive ranges from bypassing that policy. `measure:mcp` reports the real `tools/list` payload size and a deterministic discovery benchmark.
 
 Type-checking and every production build use the native TypeScript 7 compiler. The `typescript` package name intentionally points to the official TypeScript 6 compatibility package for tools such as `typescript-eslint` and `ts-loader`, which still require the compiler API that TypeScript 7 does not expose.
 

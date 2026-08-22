@@ -24,7 +24,7 @@ The application layer never imports transports or adapters. Transports depend on
 
 `ProjectRegistry` holds no global singleton and delegates persistence through `ProjectRegistryStore`. The JSON adapter validates data at the filesystem boundary and writes through an atomic rename. Renderer command construction is a pure exhaustive function over the discriminated `ElectronCommandRequest`; connection lifecycle and result formatting live in a separate executor.
 
-ESLint classifies source files by layer and rejects disallowed imports. Unknown source files and unknown dependencies fail lint so a new module cannot bypass the policy accidentally. CI runs lint, TypeScript 7 validation, tests, the real MCP verifier, context measurement, the seven-day direct-dependency maturity gate, and the package security audit.
+ESLint classifies source files by layer and rejects disallowed imports. Unknown source files and unknown dependencies fail lint so a new module cannot bypass the policy accidentally. CI runs lint, TypeScript 7 validation, tests, the real MCP verifier, context measurement, the seven-day lockfile maturity gate, and the package security audit.
 
 The `describe_electron_command` tool accepts a compact string schema in the shared catalog and validates the name against the authoritative command enum when called. This removes the duplicated enum from `tools/list` without weakening the boundary contract.
 
