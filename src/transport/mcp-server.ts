@@ -8,7 +8,7 @@ import {
 import type { ElectronAutomation } from '../application/electron-automation';
 import type { ProjectRegistry } from '../application/project-registry';
 
-const serverInfo = { name: '@debugelectron/debug-electron-mcp', version: '1.7.0' };
+const serverInfo = { name: '@debugelectron/debug-electron-mcp', version: '2.0.0' };
 const toolResultSchema = z.object({ ok: z.boolean(), data: z.unknown() });
 const projectScopeSchema = z.object({ projectName: z.string().min(1).optional() });
 const targetScopeSchema = projectScopeSchema.extend({

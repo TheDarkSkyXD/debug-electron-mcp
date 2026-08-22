@@ -29,6 +29,10 @@ For a stdio client configuration:
 }
 ```
 
+### Upgrading from 1.x
+
+Version 2 requires Node.js 20 and a client that supports MCP 2026-07-28. It replaces the legacy initialize/session lifecycle with independent stateless calls and uses the nine-tool catalog documented below. Update any saved tool names or arguments when moving an existing client configuration from 1.x.
+
 Project selection is explicit. Register a project, then pass `projectName` to a window, command, log, or screenshot call when you want to restrict the search to that app.
 
 Nearby Electron calls reuse discovery results for 5 seconds and command CDP connections for 15 seconds. The cache and pool have fixed limits and require no MCP session or client handle.
