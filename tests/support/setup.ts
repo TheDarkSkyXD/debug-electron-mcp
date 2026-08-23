@@ -1,4 +1,4 @@
-import { logger } from '../../src/utils/logger';
+import { logger } from '../../src/shared/logger';
 import { TestHelpers } from './helpers';
 import { TEST_CONFIG } from './config';
 import { mkdirSync, existsSync } from 'fs';

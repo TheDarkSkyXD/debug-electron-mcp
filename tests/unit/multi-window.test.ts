@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock electron-discovery for findElectronTarget tests
-vi.mock('../../src/utils/electron-discovery', () => ({
+vi.mock('../../src/adapters/electron/discovery', () => ({
   scanForElectronApps: vi.fn(),
   findMainTarget: vi.fn(),
   listElectronWindows: vi.fn(),
 }));
 
-import { findElectronTarget } from '../../src/utils/electron-connection';
+import { findElectronTarget } from '../../src/adapters/electron/cdp-connection';
 import {
   scanForElectronApps,
   findMainTarget,
   listElectronWindows,
-} from '../../src/utils/electron-discovery';
+} from '../../src/adapters/electron/discovery';
 
 const mockedScanForElectronApps = vi.mocked(scanForElectronApps);
 const mockedFindMainTarget = vi.mocked(findMainTarget);

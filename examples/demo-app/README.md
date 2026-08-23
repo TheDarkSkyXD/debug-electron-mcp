@@ -37,6 +37,8 @@ This will:
 - Open DevTools automatically
 - Display the demo interface
 
+Set `ELECTRON_DEBUG_PORT` before launch to use a different dedicated port. Keep that value aligned with the Debug Electron MCP project registration.
+
 **Production Mode:**
 
 ```bash

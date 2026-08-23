@@ -6,8 +6,13 @@ const isDev =
   process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 
 if (isDev) {
-  app.commandLine.appendSwitch('remote-debugging-port', '9222');
-  console.log('🔧 Chrome DevTools Protocol enabled on port 9222');
+  const debugPort = process.env.ELECTRON_DEBUG_PORT || '9222';
+  const parsedPort = Number(debugPort);
+  if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+    throw new Error('ELECTRON_DEBUG_PORT must be an integer from 1024 through 65535.');
+  }
+  app.commandLine.appendSwitch('remote-debugging-port', debugPort);
+  console.log(`🔧 Chrome DevTools Protocol enabled on port ${debugPort}`);
 }
 
 function createWindow() {

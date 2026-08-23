@@ -7,7 +7,7 @@ vi.mock('playwright', () => ({
     },
 }));
 
-vi.mock('../../src/utils/electron-discovery', () => ({
+vi.mock('../../src/adapters/electron/discovery', () => ({
     scanForElectronApps: vi.fn(),
 }));
 
@@ -15,12 +15,12 @@ vi.mock('fs/promises', () => ({
     writeFile: vi.fn(),
 }));
 
-import { takeScreenshot } from '../../src/screenshot';
+import { takeScreenshot } from '../../src/adapters/electron/screenshot';
 import { chromium } from 'playwright';
-import { scanForElectronApps } from '../../src/utils/electron-discovery';
+import { scanForElectronApps } from '../../src/adapters/electron/discovery';
 import * as fs from 'fs/promises';
 
-const mockedChromium = vi.mocked(chromium);
+const mockedConnectOverCDP = vi.mocked(chromium.connectOverCDP, { partial: true });
 const mockedScanApps = vi.mocked(scanForElectronApps);
 const mockedWriteFile = vi.mocked(fs.writeFile);
 
@@ -61,11 +61,11 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             const result = await takeScreenshot();
 
-            expect(mockedChromium.connectOverCDP).toHaveBeenCalledWith('http://localhost:9222');
+            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9222');
             expect(result.base64).toBe(Buffer.from('PNG_DATA').toString('base64'));
             expect(mockBrowser.close).toHaveBeenCalled();
         });
@@ -97,11 +97,11 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             const result = await takeScreenshot({ windowTitle: 'Settings' });
 
-            expect(mockedChromium.connectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
+            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
             expect(result.base64).toBeDefined();
         });
 
@@ -130,12 +130,16 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             const result = await takeScreenshot({ outputPath: '/tmp/screenshot.png' });
 
             expect(mockedWriteFile).toHaveBeenCalledWith('/tmp/screenshot.png', screenshotBuffer);
-            expect(result.filePath).toBe('/tmp/screenshot.png');
+            expect(result.kind).toBe('file');
+            if (result.kind === 'file') {
+                expect(result.filePath).toBe('/tmp/screenshot.png');
+                expect('base64' in result).toBe(false);
+            }
         });
 
         it('should find window by targetId when specified', async () => {
@@ -165,12 +169,12 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             const result = await takeScreenshot({ targetId: 'target-abc-123' });
 
             // Should connect to port 9223 where the target with id 'target-abc-123' was found
-            expect(mockedChromium.connectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
+            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
             expect(result.base64).toBeDefined();
         });
 
@@ -232,7 +236,7 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             await takeScreenshot();
 
@@ -254,7 +258,7 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             await expect(takeScreenshot()).rejects.toThrow('No browser contexts found');
         });
@@ -276,7 +280,7 @@ describe('Screenshot Module', () => {
                 },
             ]);
 
-            mockedChromium.connectOverCDP.mockResolvedValue(mockBrowser as any);
+            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
 
             await expect(takeScreenshot()).rejects.toThrow('No pages found');
         });
