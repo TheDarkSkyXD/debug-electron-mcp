@@ -21,12 +21,15 @@ export const electronCommandNames = [
   'find_elements',
   'get_attribute',
   'get_body_text',
+  'get_dom',
   'get_page_structure',
   'get_title',
   'get_url',
   'hover',
   'is_visible',
   'navigate_to_hash',
+  'page_info',
+  'query_selector',
   'select_option',
   'send_keyboard_shortcut',
   'type',
@@ -77,6 +80,10 @@ export const commandSpecs = {
     argsSchema: z.object({ selector: z.string().min(1), attribute: z.string().min(1) }).strict(),
   },
   get_body_text: { summary: 'Read the visible body text.', argsSchema: emptyArgs },
+  get_dom: {
+    summary: 'Read outerHTML of the document, or of one element matched by CSS selector.',
+    argsSchema: z.object({ selector: z.string().min(1).optional() }).strict(),
+  },
   get_page_structure: { summary: 'Inspect the page structure.', argsSchema: emptyArgs },
   get_title: { summary: 'Read the document title.', argsSchema: emptyArgs },
   get_url: { summary: 'Read the current URL.', argsSchema: emptyArgs },
@@ -85,6 +92,19 @@ export const commandSpecs = {
   navigate_to_hash: {
     summary: 'Navigate to a hash route.',
     argsSchema: z.object({ text: z.string().min(1) }).strict(),
+  },
+  page_info: {
+    summary: 'Read url, title, readyState, visibility state, viewport size, and user agent.',
+    argsSchema: emptyArgs,
+  },
+  query_selector: {
+    summary: 'Summarize elements matched by a CSS selector: count, tags, ids, classes, and text.',
+    argsSchema: z
+      .object({
+        selector: z.string().min(1),
+        limit: z.number().int().positive().max(100).optional(),
+      })
+      .strict(),
   },
   select_option: {
     summary: 'Select an option by value or label.',
@@ -112,19 +132,29 @@ export const commandSpecs = {
   },
   verify_form_state: { summary: 'Inspect form validity and values.', argsSchema: emptyArgs },
   wait: {
-    summary: 'Wait for a selector, text, or duration.',
+    summary: 'Wait for a selector, text, URL substring, count, visibility, or enabled state.',
     argsSchema: z
       .object({
         selector: z.string().min(1).optional(),
         text: z.string().min(1).optional(),
         duration: z.number().int().positive().max(30_000).optional(),
         timeout: z.number().int().positive().max(30_000).optional(),
+        hidden: z.string().min(1).optional(),
+        enabled: z.string().min(1).optional(),
+        urlIncludes: z.string().min(1).optional(),
+        minCount: z.number().int().positive().optional(),
       })
       .strict()
       .refine(
-        ({ selector, text, duration }) =>
-          selector !== undefined || text !== undefined || duration !== undefined,
-        'Specify a selector, text, or duration.',
+        ({ selector, text, duration, hidden, enabled, urlIncludes, minCount }) =>
+          selector !== undefined ||
+          text !== undefined ||
+          duration !== undefined ||
+          hidden !== undefined ||
+          enabled !== undefined ||
+          urlIncludes !== undefined ||
+          minCount !== undefined,
+        'Specify a selector, text, duration, hidden, enabled, urlIncludes, or minCount.',
       ),
   },
 } as const satisfies Record<ElectronCommand, CommandSpec>;
@@ -169,6 +199,8 @@ export function parseElectronCommand(
       return { command, args: commandSpecs.get_attribute.argsSchema.parse(args) };
     case 'get_body_text':
       return { command, args: commandSpecs.get_body_text.argsSchema.parse(args) };
+    case 'get_dom':
+      return { command, args: commandSpecs.get_dom.argsSchema.parse(args) };
     case 'get_page_structure':
       return { command, args: commandSpecs.get_page_structure.argsSchema.parse(args) };
     case 'get_title':
@@ -181,6 +213,10 @@ export function parseElectronCommand(
       return { command, args: commandSpecs.is_visible.argsSchema.parse(args) };
     case 'navigate_to_hash':
       return { command, args: commandSpecs.navigate_to_hash.argsSchema.parse(args) };
+    case 'page_info':
+      return { command, args: commandSpecs.page_info.argsSchema.parse(args) };
+    case 'query_selector':
+      return { command, args: commandSpecs.query_selector.argsSchema.parse(args) };
     case 'select_option':
       return { command, args: commandSpecs.select_option.argsSchema.parse(args) };
     case 'send_keyboard_shortcut':

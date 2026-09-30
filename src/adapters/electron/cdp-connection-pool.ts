@@ -1,5 +1,11 @@
 import { CdpConnectionUnavailableError, CdpSession, type CdpEvaluationResult } from './cdp-session';
 
+export interface CdpClient {
+  evaluate(javascriptCode: string, timeoutMs?: number): Promise<CdpEvaluationResult | undefined>;
+  request(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
+  on(method: string, listener: (params: unknown) => void): () => void;
+}
+
 type PoolEntry =
   | {
       readonly kind: 'connecting';
@@ -58,6 +64,18 @@ export class CdpConnectionPool {
       }
     }
     throw new CdpConnectionUnavailableError('CDP connection could not be refreshed.');
+  }
+
+  async withSession<Result>(
+    url: string,
+    operation: (client: CdpClient) => Promise<Result>,
+  ): Promise<Result> {
+    const session = await this.getSession(url);
+    try {
+      return await operation(session);
+    } finally {
+      this.release(url, session);
+    }
   }
 
   async invalidate(url: string): Promise<void> {

@@ -1,288 +1,182 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { expect, describe, it, vi } from 'vitest';
+import {
+  takeScreenshot,
+  type ScreenshotDependencies,
+} from '../../src/adapters/electron/screenshot';
 
-// Mock dependencies
-vi.mock('playwright', () => ({
-    chromium: {
-        connectOverCDP: vi.fn(),
-    },
-}));
+function createDependencies(data = Buffer.from('PNG_DATA').toString('base64')): {
+  readonly dependencies: ScreenshotDependencies;
+  readonly request: ReturnType<typeof vi.fn>;
+  readonly withSession: ReturnType<typeof vi.fn>;
+  readonly withTarget: ReturnType<typeof vi.fn>;
+} {
+  const request = vi.fn().mockResolvedValue({ data });
+  const withSession = vi.fn(
+    async (_url: string, operation: (client: { request: typeof request }) => Promise<unknown>) =>
+      operation({ request }),
+  );
+  const target = {
+    id: 'main',
+    title: 'My App',
+    type: 'page',
+    webSocketDebuggerUrl: 'ws://127.0.0.1/devtools/page/main',
+  };
+  const withTarget = vi.fn(
+    async (_options, operation: (resolvedTarget: typeof target) => Promise<unknown>) =>
+      operation(target),
+  );
+  return {
+    dependencies: { connections: { withSession }, withTarget },
+    request,
+    withSession,
+    withTarget,
+  };
+}
 
-vi.mock('../../src/adapters/electron/discovery', () => ({
-    scanForElectronApps: vi.fn(),
-}));
+describe('takeScreenshot', () => {
+  it('captures an inline PNG through the pooled CDP client', async () => {
+    const { dependencies, request, withSession, withTarget } = createDependencies();
 
-vi.mock('fs/promises', () => ({
-    writeFile: vi.fn(),
-}));
+    const result = await takeScreenshot({}, dependencies);
 
-import { takeScreenshot } from '../../src/adapters/electron/screenshot';
-import { chromium } from 'playwright';
-import { scanForElectronApps } from '../../src/adapters/electron/discovery';
-import * as fs from 'fs/promises';
-
-const mockedConnectOverCDP = vi.mocked(chromium.connectOverCDP, { partial: true });
-const mockedScanApps = vi.mocked(scanForElectronApps);
-const mockedWriteFile = vi.mocked(fs.writeFile);
-
-describe('Screenshot Module', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+    expect(result).toEqual({
+      kind: 'inline',
+      base64: Buffer.from('PNG_DATA').toString('base64'),
+      bytes: Buffer.byteLength('PNG_DATA'),
+      mimeType: 'image/png',
     });
+    expect(withTarget).toHaveBeenCalledWith({}, expect.any(Function));
+    expect(withSession).toHaveBeenCalledWith(
+      'ws://127.0.0.1/devtools/page/main',
+      expect.any(Function),
+    );
+    expect(request).toHaveBeenCalledWith('Page.captureScreenshot', { format: 'png' });
+  });
 
-    describe('takeScreenshot', () => {
-        it('should throw error when no Electron apps found', async () => {
-            mockedScanApps.mockResolvedValue([]);
+  it('creates missing parent directories for an explicit output path', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'debug-electron-shot-'));
+    const outputPath = path.join(temporaryDirectory, 'nested', 'screenshots', 'window.png');
+    const { dependencies } = createDependencies();
 
-            await expect(takeScreenshot()).rejects.toThrow(
-                'No running Electron applications found with remote debugging enabled'
-            );
-        });
+    try {
+      const result = await takeScreenshot({ outputPath }, dependencies);
 
-        it('should connect to first app when no window title specified', async () => {
-            const mockPage = {
-                url: () => 'file:///app/index.html',
-                title: () => Promise.resolve('My App'),
-                screenshot: vi.fn().mockResolvedValue(Buffer.from('PNG_DATA')),
-            };
+      expect(result).toEqual({
+        kind: 'file',
+        filePath: outputPath,
+        bytes: Buffer.byteLength('PNG_DATA'),
+        mimeType: 'image/png',
+      });
+      await expect(fs.readFile(outputPath, 'utf8')).resolves.toBe('PNG_DATA');
+    } finally {
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
 
-            const mockContext = {
-                pages: () => [mockPage],
-            };
+  it('requests JPEG with quality when the caller asks for it', async () => {
+    const { dependencies, request } = createDependencies();
 
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
+    await takeScreenshot({ format: 'jpeg', quality: 70 }, dependencies);
 
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            const result = await takeScreenshot();
-
-            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9222');
-            expect(result.base64).toBe(Buffer.from('PNG_DATA').toString('base64'));
-            expect(mockBrowser.close).toHaveBeenCalled();
-        });
-
-        it('should find app by window title when specified', async () => {
-            const mockPage = {
-                url: () => 'file:///app/settings.html',
-                title: () => Promise.resolve('Settings'),
-                screenshot: vi.fn().mockResolvedValue(Buffer.from('SETTINGS_PNG')),
-            };
-
-            const mockContext = {
-                pages: () => [mockPage],
-            };
-
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-                {
-                    port: 9223,
-                    targets: [{ id: 'settings', title: 'Settings', url: 'file:///app/settings.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            const result = await takeScreenshot({ windowTitle: 'Settings' });
-
-            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
-            expect(result.base64).toBeDefined();
-        });
-
-        it('should save screenshot to file when outputPath provided', async () => {
-            const screenshotBuffer = Buffer.from('PNG_FILE_DATA');
-
-            const mockPage = {
-                url: () => 'file:///app/index.html',
-                title: () => Promise.resolve('My App'),
-                screenshot: vi.fn().mockResolvedValue(screenshotBuffer),
-            };
-
-            const mockContext = {
-                pages: () => [mockPage],
-            };
-
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            const result = await takeScreenshot({ outputPath: '/tmp/screenshot.png' });
-
-            expect(mockedWriteFile).toHaveBeenCalledWith('/tmp/screenshot.png', screenshotBuffer);
-            expect(result.kind).toBe('file');
-            if (result.kind === 'file') {
-                expect(result.filePath).toBe('/tmp/screenshot.png');
-                expect('base64' in result).toBe(false);
-            }
-        });
-
-        it('should find window by targetId when specified', async () => {
-            const mockPage = {
-                url: () => 'file:///app/settings.html',
-                title: () => Promise.resolve('Settings'),
-                screenshot: vi.fn().mockResolvedValue(Buffer.from('TARGET_ID_PNG')),
-            };
-
-            const mockContext = {
-                pages: () => [mockPage],
-            };
-
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-                {
-                    port: 9223,
-                    targets: [{ id: 'target-abc-123', title: 'Settings', url: 'file:///app/settings.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            const result = await takeScreenshot({ targetId: 'target-abc-123' });
-
-            // Should connect to port 9223 where the target with id 'target-abc-123' was found
-            expect(mockedConnectOverCDP).toHaveBeenCalledWith('http://localhost:9223');
-            expect(result.base64).toBeDefined();
-        });
-
-        it('should throw error when targetId not found', async () => {
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-            ]);
-
-            await expect(takeScreenshot({ targetId: 'non-existent-id' })).rejects.toThrow(
-                'No window found with targetId "non-existent-id"'
-            );
-        });
-
-        it('should throw error when windowTitle not found', async () => {
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' }],
-                },
-            ]);
-
-            await expect(takeScreenshot({ windowTitle: 'NonExistent' })).rejects.toThrow(
-                'No window found with title matching "NonExistent"'
-            );
-        });
-
-        it('should skip DevTools pages when looking for target page', async () => {
-            const mainPage = {
-                url: () => 'file:///app/index.html',
-                title: () => Promise.resolve('My App'),
-                screenshot: vi.fn().mockResolvedValue(Buffer.from('MAIN_PNG')),
-            };
-
-            const devToolsPage = {
-                url: () => 'devtools://devtools/bundled/inspector.html',
-                title: () => Promise.resolve('DevTools'),
-                screenshot: vi.fn(),
-            };
-
-            const mockContext = {
-                pages: () => [devToolsPage, mainPage],
-            };
-
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [
-                        { id: 'devtools', title: 'DevTools', url: 'devtools://devtools/bundled/inspector.html', type: 'page' },
-                        { id: 'main', title: 'My App', url: 'file:///app/index.html', type: 'page' },
-                    ],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            await takeScreenshot();
-
-            // Should have called screenshot on main page, not DevTools
-            expect(mainPage.screenshot).toHaveBeenCalled();
-            expect(devToolsPage.screenshot).not.toHaveBeenCalled();
-        });
-
-        it('should throw error when no browser contexts found', async () => {
-            const mockBrowser = {
-                contexts: () => [],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            await expect(takeScreenshot()).rejects.toThrow('No browser contexts found');
-        });
-
-        it('should throw error when no pages found', async () => {
-            const mockContext = {
-                pages: () => [],
-            };
-
-            const mockBrowser = {
-                contexts: () => [mockContext],
-                close: vi.fn(),
-            };
-
-            mockedScanApps.mockResolvedValue([
-                {
-                    port: 9222,
-                    targets: [{ id: 'main', title: 'My App', url: 'file:///app.html', type: 'page' }],
-                },
-            ]);
-
-            mockedConnectOverCDP.mockResolvedValue(mockBrowser);
-
-            await expect(takeScreenshot()).rejects.toThrow('No pages found');
-        });
+    expect(request).toHaveBeenCalledWith('Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: 70,
     });
+  });
+
+  it('omits quality for PNG because the format does not accept it', async () => {
+    const { dependencies, request } = createDependencies();
+
+    await takeScreenshot({ format: 'png', quality: 70 }, dependencies);
+
+    expect(request).toHaveBeenCalledWith('Page.captureScreenshot', { format: 'png' });
+  });
+
+  it('clips a screenshot to the on-screen box of a matched element', async () => {
+    const { dependencies, request, withSession } = createDependencies();
+    const evaluate = vi.fn().mockResolvedValue({
+      value: { x: 10, y: 20, width: 200, height: 100, viewportWidth: 800, viewportHeight: 600 },
+    });
+    withSession.mockImplementationOnce(async (_url, operation) =>
+      operation({ request, evaluate }),
+    );
+
+    await takeScreenshot({ selector: '#sidebar' }, dependencies);
+
+    expect(request).toHaveBeenCalledWith('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: 10, y: 20, width: 200, height: 100, scale: 1 },
+      captureBeyondViewport: false,
+    });
+  });
+
+  it('cuts an oversized element down to the viewport instead of capturing the whole window', async () => {
+    const { dependencies, request, withSession } = createDependencies();
+    const evaluate = vi.fn().mockResolvedValue({
+      value: { x: 0, y: -40, width: 200, height: 900, viewportWidth: 800, viewportHeight: 600 },
+    });
+    withSession.mockImplementationOnce(async (_url, operation) =>
+      operation({ request, evaluate }),
+    );
+
+    await takeScreenshot({ selector: '#tall' }, dependencies);
+
+    expect(request).toHaveBeenCalledWith('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: 0, y: 0, width: 200, height: 600, scale: 1 },
+      captureBeyondViewport: false,
+    });
+  });
+
+  it('fails a clipped screenshot when the element is scrolled out of view', async () => {
+    const { dependencies, request, withSession } = createDependencies();
+    const evaluate = vi.fn().mockResolvedValue({
+      value: { x: 0, y: 900, width: 200, height: 100, viewportWidth: 800, viewportHeight: 600 },
+    });
+    withSession.mockImplementationOnce(async (_url, operation) =>
+      operation({ request, evaluate }),
+    );
+
+    await expect(takeScreenshot({ selector: '#below-fold' }, dependencies)).rejects.toThrow(
+      'outside the viewport',
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('refuses to write a screenshot to a sensitive system location', async () => {
+    const { dependencies, request, withTarget } = createDependencies();
+    const blocked = path.join(os.homedir(), '.ssh', 'authorized_keys');
+
+    await expect(takeScreenshot({ outputPath: blocked }, dependencies)).rejects.toThrow(
+      'sensitive location',
+    );
+    // The guard runs before the capture, so a refused path costs no round trip.
+    expect(withTarget).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('preserves the selected target and rejects malformed CDP responses', async () => {
+    const { dependencies, request, withTarget } = createDependencies();
+    request.mockResolvedValueOnce({});
+
+    await expect(takeScreenshot({ targetId: 'settings' }, dependencies)).rejects.toThrow(
+      'malformed screenshot response',
+    );
+    expect(withTarget).toHaveBeenCalledWith({ targetId: 'settings' }, expect.any(Function));
+  });
+
+  it('fails when the selected target has no CDP WebSocket URL', async () => {
+    const { dependencies, withSession, withTarget } = createDependencies();
+    withTarget.mockImplementationOnce(async (_options, operation) =>
+      operation({ id: 'main', title: 'My App', type: 'page' }),
+    );
+
+    await expect(takeScreenshot({}, dependencies)).rejects.toThrow(
+      'No WebSocket debugger URL available',
+    );
+    expect(withSession).not.toHaveBeenCalled();
+  });
 });

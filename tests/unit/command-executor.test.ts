@@ -54,7 +54,9 @@ describe('Electron command executor', () => {
   it('rejects empty wait commands before discovering or connecting to Electron', async () => {
     await expect(
       sendCommandToElectron({ command: 'wait', args: {} }),
-    ).rejects.toThrow('Specify a selector, text, or duration for wait');
+    ).rejects.toThrow(
+      'Specify a selector, text, duration, hidden, enabled, urlIncludes, or minCount for wait',
+    );
 
     expect(findTarget).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();

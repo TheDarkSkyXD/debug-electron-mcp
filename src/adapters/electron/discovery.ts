@@ -10,13 +10,40 @@ import type { DevToolsTarget, ElectronAppInfo } from './devtools-types';
 /**
  * Scan for running Electron applications with DevTools enabled
  * @param ports - Optional list of specific ports to scan. When provided, only these ports are checked.
- *                When omitted, scans the default hardcoded port ranges.
+ *                When omitted, scans the full range the project registry allocates from.
  */
-const DEFAULT_PORTS = [
-  9200, 9201, 9202, 9203, 9204, 9205, 9222, 9223, 9224, 9225, 9300, 9301, 9302, 9303, 9304, 9305,
-  9400, 9401, 9402, 9403, 9404, 9405,
-] as const;
-const DISCOVERY_CONCURRENCY = 6;
+/**
+ * Ports probed when the caller does not narrow the search.
+ *
+ * This must cover the whole range the project registry allocates from. An
+ * earlier hardcoded list probed a scattered subset of it, so registering more
+ * than four projects produced apps that `register_project` reported as
+ * connected and a bare `list_electron_windows` then could not see.
+ */
+const DEFAULT_PORT_RANGE_START = 9222;
+const DEFAULT_PORT_RANGE_END = 9322;
+const DISCOVERY_CONCURRENCY = 24;
+
+/**
+ * How long a single probe may take before it is given up on.
+ *
+ * A closed port is refused by the OS immediately, so this budget is only ever
+ * spent on a port that accepted the connection and then failed to speak HTTP.
+ * Measured: 50 refused ports finish in ~30ms, so the cost here is the
+ * stall case, not the scan. Widening the probed range is therefore affordable
+ * as long as concurrent stalls overlap, which is what the concurrency above is
+ * for, rather than by shortening this and turning a slow answer into a wrong
+ * one.
+ */
+const PROBE_TIMEOUT_MS = 1_000;
+
+function defaultPorts(): number[] {
+  const ports: number[] = [];
+  for (let port = DEFAULT_PORT_RANGE_START; port <= DEFAULT_PORT_RANGE_END; port += 1) {
+    ports.push(port);
+  }
+  return ports;
+}
 
 function isDevToolsTarget(value: unknown): value is DevToolsTarget {
   if (value === null || typeof value !== 'object') return false;
@@ -37,7 +64,7 @@ function isDevToolsTarget(value: unknown): value is DevToolsTarget {
 async function scanPort(port: number): Promise<ElectronAppInfo | undefined> {
   try {
     const response = await fetch(`http://localhost:${port}/json`, {
-      signal: AbortSignal.timeout(1000),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (!response.ok) return undefined;
     const body: unknown = await response.json();
@@ -68,7 +95,7 @@ async function mapBounded<T, R>(
 
 export async function scanForElectronApps(ports?: readonly number[]): Promise<ElectronAppInfo[]> {
   logger.debug('Scanning for running Electron applications...');
-  const scanned = await mapBounded(ports ?? DEFAULT_PORTS, scanPort);
+  const scanned = await mapBounded(ports ?? defaultPorts(), scanPort);
   return scanned
     .filter((app): app is ElectronAppInfo => app !== undefined)
     .sort((left, right) => left.port - right.port)

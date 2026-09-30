@@ -8,8 +8,9 @@ export interface CdpEvaluationResult {
   readonly objectId?: string;
 }
 
-interface PendingEvaluation {
-  readonly resolve: (result: CdpEvaluationResult | undefined) => void;
+interface PendingRequest {
+  readonly method: string;
+  readonly resolve: (result: unknown) => void;
   readonly reject: (error: Error) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
 }
@@ -42,7 +43,8 @@ function isEvaluationResult(value: unknown): value is CdpEvaluationResult {
 }
 
 export class CdpSession {
-  private readonly pending = new Map<number, PendingEvaluation>();
+  private readonly pending = new Map<number, PendingRequest>();
+  private readonly eventListeners = new Map<string, Set<(params: unknown) => void>>();
   private healthy = true;
   private nextMessageId = 2;
 
@@ -122,7 +124,31 @@ export class CdpSession {
     return this.healthy && this.socket.readyState === WebSocket.OPEN;
   }
 
-  evaluate(javascriptCode: string, timeoutMs = 10_000): Promise<CdpEvaluationResult | undefined> {
+  /**
+   * Subscribe to a protocol event such as `Tracing.dataCollected`.
+   *
+   * Events arrive on the same socket as responses but carry no message id, so
+   * they would otherwise be discarded. Returns an unsubscribe function, since
+   * pooled sessions outlive a single operation and a listener that outlives its
+   * subscription keeps a completed trace's data alive.
+   */
+  on(method: string, listener: (params: unknown) => void): () => void {
+    const existing = this.eventListeners.get(method);
+    if (existing) {
+      existing.add(listener);
+    } else {
+      this.eventListeners.set(method, new Set([listener]));
+    }
+    return () => {
+      this.eventListeners.get(method)?.delete(listener);
+    };
+  }
+
+  request(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = 10_000,
+  ): Promise<unknown> {
     if (!this.isOpen) {
       throw new CdpConnectionUnavailableError('CDP connection is not open.');
     }
@@ -130,23 +156,19 @@ export class CdpSession {
     const messageId = this.nextMessageId;
     this.nextMessageId += 1;
 
-    return new Promise<CdpEvaluationResult | undefined>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(messageId);
-        reject(new Error(`Command execution timeout (${timeoutMs}ms)`));
+        reject(new Error(`CDP request ${method} timed out after ${timeoutMs}ms.`));
       }, timeoutMs);
       timeout.unref();
-      this.pending.set(messageId, { resolve, reject, timeout });
+      this.pending.set(messageId, { method, resolve, reject, timeout });
 
       this.socket.send(
         JSON.stringify({
           id: messageId,
-          method: 'Runtime.evaluate',
-          params: {
-            expression: javascriptCode,
-            returnByValue: true,
-            awaitPromise: true,
-          },
+          method,
+          params,
         }),
         (error) => {
           if (!error) return;
@@ -155,11 +177,34 @@ export class CdpSession {
           clearTimeout(pending.timeout);
           this.pending.delete(messageId);
           pending.reject(
-            new Error(`Failed to send CDP command: ${error.message}`, { cause: error }),
+            new Error(`Failed to send CDP request ${method}: ${error.message}`, { cause: error }),
           );
         },
       );
     });
+  }
+
+  async evaluate(
+    javascriptCode: string,
+    timeoutMs = 10_000,
+  ): Promise<CdpEvaluationResult | undefined> {
+    const response = await this.request(
+      'Runtime.evaluate',
+      {
+        expression: javascriptCode,
+        returnByValue: true,
+        awaitPromise: true,
+      },
+      timeoutMs,
+    );
+    if (!isRecord(response) || !('result' in response)) {
+      throw new Error('DevTools Protocol returned a malformed evaluation response.');
+    }
+    if (response.result === undefined) return undefined;
+    if (!isEvaluationResult(response.result)) {
+      throw new Error('DevTools Protocol returned a malformed evaluation result.');
+    }
+    return response.result;
   }
 
   async close(): Promise<void> {
@@ -182,7 +227,15 @@ export class CdpSession {
   private handleMessage(rawMessage: string): void {
     try {
       const response: unknown = JSON.parse(rawMessage);
-      if (!isRecord(response) || typeof response.id !== 'number') return;
+      if (!isRecord(response)) return;
+
+      if (typeof response.id !== 'number') {
+        if (typeof response.method === 'string') {
+          this.dispatchEvent(response.method, response.params);
+        }
+        return;
+      }
+
       const pending = this.pending.get(response.id);
       if (!pending) return;
 
@@ -194,34 +247,44 @@ export class CdpSession {
           typeof response.error.message === 'string'
             ? response.error.message
             : 'Unknown protocol error';
-        pending.reject(new Error(`DevTools Protocol error: ${message}`));
+        pending.reject(new Error(`DevTools Protocol error for ${pending.method}: ${message}`));
         return;
       }
 
-      if (!isRecord(response.result) || !('result' in response.result)) {
-        pending.resolve(undefined);
-        return;
-      }
-
-      const result = response.result.result;
-      if (!isEvaluationResult(result)) {
-        pending.reject(new Error('DevTools Protocol returned a malformed evaluation result.'));
-        return;
-      }
-      pending.resolve(result);
+      pending.resolve(response.result);
     } catch (error) {
+      this.healthy = false;
       this.rejectPending(
         new Error(
           `Failed to parse CDP response: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
+      if (this.socket.readyState !== WebSocket.CLOSED) this.socket.terminate();
+    }
+  }
+
+  private dispatchEvent(method: string, params: unknown): void {
+    const listeners = this.eventListeners.get(method);
+    if (!listeners) return;
+    for (const listener of listeners) {
+      try {
+        listener(params);
+      } catch (error) {
+        // One faulty listener must not stop the others or kill the session.
+        this.healthy = false;
+        this.rejectPending(
+          new Error(`CDP event listener for ${method} threw: ${String(error)}`, { cause: error }),
+        );
+      }
     }
   }
 
   private rejectPending(error: Error): void {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timeout);
-      pending.reject(error);
+      pending.reject(
+        new Error(`CDP request ${pending.method} failed: ${error.message}`, { cause: error }),
+      );
     }
     this.pending.clear();
   }

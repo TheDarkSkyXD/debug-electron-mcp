@@ -29,9 +29,11 @@ async function createCdpServer(evaluationDelayMs = 0): Promise<{
   readonly url: string;
   readonly connectionCount: () => number;
   readonly evaluationCount: () => number;
+  readonly methods: () => readonly string[];
 }> {
   let connections = 0;
   let evaluations = 0;
+  const methods: string[] = [];
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const address = server.address();
@@ -44,18 +46,34 @@ async function createCdpServer(evaluationDelayMs = 0): Promise<{
     socket.on('message', (data) => {
       const request: unknown = JSON.parse(data.toString());
       if (!isRecord(request) || typeof request.id !== 'number') return;
+      if (typeof request.method === 'string') methods.push(request.method);
 
       if (request.method === 'Runtime.evaluate') {
         evaluations += 1;
+        const expression =
+          isRecord(request.params) && typeof request.params.expression === 'string'
+            ? request.params.expression
+            : '';
+        const value = expression.includes('window.innerWidth') ? { x: 400, y: 300 } : evaluations;
         const response = JSON.stringify({
           id: request.id,
-          result: { result: { type: 'number', value: evaluations } },
+          result: { result: { type: typeof value === 'number' ? 'number' : 'object', value } },
         });
         if (evaluationDelayMs > 0) {
           setTimeout(() => socket.send(response), evaluationDelayMs);
         } else {
           socket.send(response);
         }
+        return;
+      }
+
+      if (request.method === 'Page.captureScreenshot') {
+        socket.send(
+          JSON.stringify({
+            id: request.id,
+            result: { data: Buffer.from('PNG_DATA').toString('base64') },
+          }),
+        );
         return;
       }
 
@@ -68,6 +86,7 @@ async function createCdpServer(evaluationDelayMs = 0): Promise<{
     url: `ws://127.0.0.1:${address.port}`,
     connectionCount: () => connections,
     evaluationCount: () => evaluations,
+    methods: () => methods,
   };
 }
 
@@ -207,6 +226,64 @@ describe('CDP connection pool', () => {
 
     expect(cdp.connectionCount()).toBe(1);
     expect(cdp.evaluationCount()).toBe(3);
+  });
+
+  it('keeps one leased session for a complete CDP request operation', async () => {
+    const cdp = await createCdpServer();
+    servers.push(cdp.server);
+    const pool = new CdpConnectionPool({ idleTtlMs: 5_000, maxConnections: 4 });
+    pools.push(pool);
+
+    const result = await pool.withSession(cdp.url, async (client) => {
+      await client.request('Page.enable');
+      await client.request('Page.captureScreenshot', { format: 'png' });
+      return 'captured';
+    });
+
+    expect(result).toBe('captured');
+    expect(cdp.connectionCount()).toBe(1);
+    expect(cdp.methods()).toEqual(['Runtime.enable', 'Page.enable', 'Page.captureScreenshot']);
+  });
+
+  it('evicts a malformed CDP transport and identifies the interrupted method', async () => {
+    let connections = 0;
+    let sentMalformedResponse = false;
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await once(server, 'listening');
+    const address = server.address();
+    if (typeof address !== 'object' || address === null) {
+      throw new Error('Test WebSocket server did not bind to a TCP port.');
+    }
+    server.on('connection', (socket) => {
+      connections += 1;
+      socket.on('message', (data) => {
+        const request: unknown = JSON.parse(data.toString());
+        if (!isRecord(request) || typeof request.id !== 'number') return;
+        if (request.method === 'Page.enable' && !sentMalformedResponse) {
+          sentMalformedResponse = true;
+          socket.send('{malformed');
+          return;
+        }
+        socket.send(JSON.stringify({ id: request.id, result: {} }));
+      });
+    });
+    const pool = new CdpConnectionPool();
+
+    try {
+      await expect(
+        pool.withSession(`ws://127.0.0.1:${address.port}`, (client) =>
+          client.request('Page.enable'),
+        ),
+      ).rejects.toThrow(/Page\.enable/);
+      await pool.withSession(`ws://127.0.0.1:${address.port}`, (client) =>
+        client.request('Page.getLayoutMetrics'),
+      );
+
+      expect(connections).toBe(2);
+    } finally {
+      await pool.close();
+      await closeCdpServer(server);
+    }
   });
 
   it('keeps the hard capacity limit during concurrent cold evaluations', async () => {
@@ -404,6 +481,123 @@ describe('CDP connection pool', () => {
 });
 
 describe('warm Electron automation path', () => {
+  it('resolves the DevTools target once and leases one connection for an action batch', async () => {
+    const cdp = await createCdpServer();
+    const discovery = await createDiscoveryServer(cdp.url);
+    const automation = createElectronAutomation();
+
+    try {
+      const { results } = await automation.performActions({
+        target: { ports: [discovery.port] },
+        stopOnError: true,
+        actions: [
+          { kind: 'click', target: { kind: 'coordinates', x: 10, y: 20 } },
+          { kind: 'scroll', deltaY: 100 },
+        ],
+      });
+
+      expect(results.map((result) => result.ok)).toEqual([true, true]);
+      expect(discovery.requestCount()).toBe(1);
+      expect(cdp.connectionCount()).toBe(1);
+      expect(cdp.methods()).toEqual([
+        'Runtime.enable',
+        'Input.dispatchMouseEvent',
+        'Input.dispatchMouseEvent',
+        'Input.dispatchMouseEvent',
+        'Runtime.evaluate',
+        'Input.dispatchMouseEvent',
+      ]);
+    } finally {
+      await automation.close();
+      await closeHttpServer(discovery.server);
+      await closeCdpServer(cdp.server);
+    }
+  });
+
+  it('reuses one CDP connection for sequential screenshots', async () => {
+    const cdp = await createCdpServer();
+    const discovery = await createDiscoveryServer(cdp.url);
+    const automation = createElectronAutomation();
+
+    try {
+      const first = await automation.takeScreenshot({ ports: [discovery.port] });
+      const second = await automation.takeScreenshot({ ports: [discovery.port] });
+
+      expect(first).toMatchObject({ kind: 'inline', bytes: Buffer.byteLength('PNG_DATA') });
+      expect(second).toMatchObject({ kind: 'inline', bytes: Buffer.byteLength('PNG_DATA') });
+      expect(discovery.requestCount()).toBe(1);
+      expect(cdp.connectionCount()).toBe(1);
+      expect(cdp.methods().filter((method) => method === 'Page.captureScreenshot')).toHaveLength(2);
+    } finally {
+      await automation.close();
+      await closeHttpServer(discovery.server);
+      await closeCdpServer(cdp.server);
+    }
+  });
+
+  it('refreshes stale discovery before an action batch starts', async () => {
+    const firstCdp = await createCdpServer();
+    const secondCdp = await createCdpServer();
+    const discovery = await createDiscoveryServer(firstCdp.url);
+    const automation = createElectronAutomation();
+    let firstServerClosed = false;
+
+    try {
+      await automation.listWindows({ includeDevTools: false, ports: [discovery.port] });
+      discovery.setWebSocketDebuggerUrl(secondCdp.url);
+      await closeCdpServer(firstCdp.server);
+      firstServerClosed = true;
+
+      const { results } = await automation.performActions({
+        target: { ports: [discovery.port] },
+        stopOnError: true,
+        actions: [{ kind: 'click', target: { kind: 'coordinates', x: 10, y: 20 } }],
+      });
+
+      expect(results.map((result) => result.ok)).toEqual([true]);
+      expect(discovery.requestCount()).toBe(2);
+      expect(secondCdp.connectionCount()).toBe(1);
+      expect(secondCdp.methods()).toEqual([
+        'Runtime.enable',
+        'Input.dispatchMouseEvent',
+        'Input.dispatchMouseEvent',
+        'Input.dispatchMouseEvent',
+      ]);
+    } finally {
+      await automation.close();
+      await closeHttpServer(discovery.server);
+      if (!firstServerClosed) await closeCdpServer(firstCdp.server);
+      await closeCdpServer(secondCdp.server);
+    }
+  });
+
+  it('refreshes stale discovery before capturing a screenshot', async () => {
+    const firstCdp = await createCdpServer();
+    const secondCdp = await createCdpServer();
+    const discovery = await createDiscoveryServer(firstCdp.url);
+    const automation = createElectronAutomation();
+    let firstServerClosed = false;
+
+    try {
+      await automation.listWindows({ includeDevTools: false, ports: [discovery.port] });
+      discovery.setWebSocketDebuggerUrl(secondCdp.url);
+      await closeCdpServer(firstCdp.server);
+      firstServerClosed = true;
+
+      const result = await automation.takeScreenshot({ ports: [discovery.port] });
+
+      expect(result).toMatchObject({ kind: 'inline', bytes: Buffer.byteLength('PNG_DATA') });
+      expect(discovery.requestCount()).toBe(2);
+      expect(secondCdp.connectionCount()).toBe(1);
+      expect(secondCdp.methods()).toEqual(['Runtime.enable', 'Page.captureScreenshot']);
+    } finally {
+      await automation.close();
+      await closeHttpServer(discovery.server);
+      if (!firstServerClosed) await closeCdpServer(firstCdp.server);
+      await closeCdpServer(secondCdp.server);
+    }
+  });
+
   it('reuses discovery and CDP across sequential application calls', async () => {
     const cdp = await createCdpServer();
     const discovery = await createDiscoveryServer(cdp.url);

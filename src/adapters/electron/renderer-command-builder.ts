@@ -26,6 +26,56 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
       javascriptCode = 'document.body.innerText.substring(0, 500)';
       break;
 
+    case 'get_dom':
+      const domSelector = args?.selector;
+      javascriptCode = domSelector
+        ? `(() => {
+            const element = document.querySelector(${JSON.stringify(domSelector)});
+            return element ? element.outerHTML : null;
+          })()`
+        : 'document.documentElement.outerHTML';
+      break;
+
+    case 'page_info':
+      javascriptCode = `JSON.stringify({
+        url: window.location.href,
+        title: document.title,
+        readyState: document.readyState,
+        visibilityState: document.visibilityState,
+        userAgent: navigator.userAgent,
+        viewport: { width: window.innerWidth, height: window.innerHeight }
+      })`;
+      break;
+
+    case 'query_selector':
+      const querySelectorValue = args?.selector ?? '';
+      if (!querySelectorValue) {
+        throw new Error('Missing selector for query_selector');
+      }
+      const queryLimit = args?.limit ?? 20;
+      const escapedQuerySelector = JSON.stringify(querySelectorValue);
+      javascriptCode = `
+          (function() {
+            try {
+              const nodes = Array.from(document.querySelectorAll(${escapedQuerySelector}));
+              return JSON.stringify({
+                selector: ${escapedQuerySelector},
+                count: nodes.length,
+                nodes: nodes.slice(0, ${queryLimit}).map((element, index) => ({
+                  index,
+                  tag: element.tagName.toLowerCase(),
+                  id: element.id || null,
+                  className: typeof element.className === 'string' ? element.className : null,
+                  text: (element.innerText || '').trim().slice(0, 200)
+                }))
+              });
+            } catch (error) {
+              return 'Error querying elements: ' + error.message;
+            }
+          })();
+        `;
+      break;
+
     case 'click_button':
       // Validate and escape selector input
       const selector = args?.selector || 'button';
@@ -481,14 +531,31 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
       break;
 
     case 'wait':
-      // Wait for element, text, or specified time
       const waitSelector = args?.selector || '';
       const waitText = args?.text || '';
       const waitDuration = args?.duration || 0;
       const waitTimeout = args?.timeout || 5000;
+      const waitHidden = args?.hidden || '';
+      const waitEnabled = args?.enabled || '';
+      const waitUrlIncludes = args?.urlIncludes || '';
+      const waitMinCount = args?.minCount;
 
-      if (!waitSelector && !waitText && !waitDuration) {
-        throw new Error('Specify a selector, text, or duration for wait');
+      if (
+        !waitSelector &&
+        !waitText &&
+        !waitDuration &&
+        !waitHidden &&
+        !waitEnabled &&
+        !waitUrlIncludes &&
+        waitMinCount === undefined
+      ) {
+        throw new Error(
+          'Specify a selector, text, duration, hidden, enabled, urlIncludes, or minCount for wait',
+        );
+      }
+
+      if (waitMinCount !== undefined && !waitSelector) {
+        throw new Error('minCount requires a selector to count matches of');
       }
 
       if (waitDuration > 0) {
@@ -499,56 +566,123 @@ export function buildRendererCommand(request: ElectronCommandRequest): string {
               });
             })();
           `;
-      } else if (waitSelector) {
-        const escapedWaitSelector = JSON.stringify(waitSelector);
-        javascriptCode = `
-            (function() {
-              return new Promise((resolve) => {
-                const startTime = Date.now();
-                const timeout = ${waitTimeout};
-                
-                function check() {
-                  const element = document.querySelector(${escapedWaitSelector});
-                  if (element && element.getBoundingClientRect().width > 0) {
-                    resolve('Element found: ' + ${escapedWaitSelector} + ' (after ' + (Date.now() - startTime) + 'ms)');
-                    return;
-                  }
-                  if (Date.now() - startTime > timeout) {
-                    resolve('Timeout waiting for element: ' + ${escapedWaitSelector});
-                    return;
-                  }
-                  setTimeout(check, 100);
-                }
-                check();
-              });
-            })();
-          `;
-      } else if (waitText) {
-        const escapedWaitText = JSON.stringify(waitText);
-        javascriptCode = `
-            (function() {
-              return new Promise((resolve) => {
-                const startTime = Date.now();
-                const timeout = ${waitTimeout};
-                
-                function check() {
-                  if (document.body.innerText.includes(${escapedWaitText})) {
-                    resolve('Text found: ' + ${escapedWaitText} + ' (after ' + (Date.now() - startTime) + 'ms)');
-                    return;
-                  }
-                  if (Date.now() - startTime > timeout) {
-                    resolve('Timeout waiting for text: ' + ${escapedWaitText});
-                    return;
-                  }
-                  setTimeout(check, 100);
-                }
-                check();
-              });
-            })();
-          `;
-      } else {
-        throw new Error('Missing selector, text, or duration for wait');
+        break;
       }
+
+      // Every requested condition is collected and reported together, so one
+      // poll answers "did it appear AND stop being visible AND the URL
+      // changed" rather than making the caller serialize three waits.
+      const conditions = [
+        waitSelector
+          ? {
+              name: `selector:${waitSelector}`,
+              test: `(() => {
+                  const element = document.querySelector(${JSON.stringify(waitSelector)});
+                  if (!element) return false;
+                  const bounds = element.getBoundingClientRect();
+                  return bounds.width > 0 && bounds.height > 0;
+                })()`,
+            }
+          : undefined,
+        waitHidden
+          ? {
+              name: `hidden:${waitHidden}`,
+              test: `(() => {
+                  const element = document.querySelector(${JSON.stringify(waitHidden)});
+                  if (!element) return true;
+                  const style = window.getComputedStyle(element);
+                  return style.display === 'none' ||
+                    style.visibility === 'hidden' ||
+                    style.opacity === '0' ||
+                    element.getClientRects().length === 0;
+                })()`,
+            }
+          : undefined,
+        waitEnabled
+          ? {
+              name: `enabled:${waitEnabled}`,
+              test: `(() => {
+                  const element = document.querySelector(${JSON.stringify(waitEnabled)});
+                  if (!element) return false;
+                  if (element.hasAttribute('disabled')) return false;
+                  if (element.getAttribute('aria-disabled') === 'true') return false;
+                  return !('disabled' in element && element.disabled);
+                })()`,
+            }
+          : undefined,
+        waitText
+          ? {
+              name: `text:${waitText}`,
+              test: `Boolean(document.body && document.body.innerText.includes(${JSON.stringify(
+                waitText,
+              )}))`,
+            }
+          : undefined,
+        waitUrlIncludes
+          ? {
+              name: `url:${waitUrlIncludes}`,
+              test: `window.location.href.includes(${JSON.stringify(waitUrlIncludes)})`,
+            }
+          : undefined,
+        waitMinCount !== undefined
+          ? {
+              name: `count:${waitSelector}>=${waitMinCount}`,
+              test: `document.querySelectorAll(${JSON.stringify(
+                waitSelector,
+              )}).length >= ${waitMinCount}`,
+            }
+          : undefined,
+      ].filter((condition): condition is { name: string; test: string } => condition !== undefined);
+
+      // Each condition is emitted as a real function, never `eval`ed. An
+      // Electron renderer commonly ships a Content-Security-Policy without
+      // 'unsafe-eval', so an eval-based check would throw, be swallowed by the
+      // catch below, and report "satisfied: none" for every condition — a
+      // timeout that looks like a genuine wait rather than a broken probe.
+      javascriptCode = `
+          (function() {
+            return new Promise((resolve) => {
+              const startTime = Date.now();
+              const timeout = ${waitTimeout};
+              const tests = [
+${conditions
+  .map(
+    (condition) =>
+      `                { name: ${JSON.stringify(condition.name)}, test: function() { return Boolean(${condition.test}); } },`,
+  )
+  .join('\n')}
+              ];
+
+              function check() {
+                let satisfied = 0;
+                const names = [];
+                for (const condition of tests) {
+                  if (condition.test()) {
+                    satisfied += 1;
+                    names.push(condition.name);
+                  }
+                }
+                if (satisfied === tests.length) {
+                  resolve(
+                    'Matched ' + names.join(', ') +
+                    ' (after ' + (Date.now() - startTime) + 'ms)'
+                  );
+                  return;
+                }
+                if (Date.now() - startTime > timeout) {
+                  resolve(
+                    'Timeout after ' + timeout + 'ms. Satisfied: ' +
+                    (names.length ? names.join(', ') : 'none') +
+                    '. Unsatisfied: ' + (tests.length - satisfied) + ' condition(s)'
+                  );
+                  return;
+                }
+                setTimeout(check, 100);
+              }
+              check();
+            });
+          })();
+        `;
       break;
 
     case 'type':

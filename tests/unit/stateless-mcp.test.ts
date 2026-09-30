@@ -54,7 +54,7 @@ describe('stateless MCP migration seams', () => {
       args: { duration: 25, timeout: 100 },
     });
     expect(() => parseElectronCommand('wait', {})).toThrow(
-      'Specify a selector, text, or duration.',
+      'Specify a selector, text, duration, hidden, enabled, urlIncludes, or minCount.',
     );
     expect(parseElectronCommand('type', { text: 'hello', slowly: false })).toEqual({
       command: 'type',

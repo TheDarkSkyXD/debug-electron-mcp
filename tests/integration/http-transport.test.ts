@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ElectronAutomation } from '../../src/application/electron-automation';
 import { ProjectRegistry } from '../../src/application/project-registry';
-import {
-  startHttpServer,
-  type RunningHttpServer,
-} from '../../src/transport/http-server';
+import { startHttpServer, type RunningHttpServer } from '../../src/transport/http-server';
 import { createMcpServer } from '../../src/transport/mcp-server';
 
 const protocolVersion = '2026-07-28';
@@ -21,10 +18,15 @@ function createTestServer() {
     listWindows: async () => [],
     readLogs: async () => '',
     executeCommand: async () => '',
+    performActions: async ({ actions }) => ({
+      results: actions.map((action, index) => ({ index, kind: action.kind, ok: true, value: null })),
+    }),
+    sendCdpCommand: async ({ method }) => ({ echoed: method }),
     takeScreenshot: async () => ({
       kind: 'inline',
       base64: Buffer.from('inline-image').toString('base64'),
       bytes: Buffer.byteLength('inline-image'),
+      mimeType: 'image/png',
     }),
   };
   const projects = new ProjectRegistry({
@@ -97,6 +99,10 @@ describe('MCP 2026 HTTP transport', () => {
     expect(firstList.headers.has('mcp-session-id')).toBe(false);
     expect(secondList.status).toBe(200);
     expect(secondListText).toBe(firstListText);
+    const actionTool = JSON.parse(firstListText).result.tools.find(
+      (tool: { name: string }) => tool.name === 'perform_electron_actions',
+    );
+    expect(actionTool.annotations.openWorldHint).toBe(true);
 
     const missingHeaders = await fetch(`http://127.0.0.1:${running.port}/mcp`, {
       method: 'POST',
@@ -132,11 +138,39 @@ describe('MCP 2026 HTTP transport', () => {
     const screenshotBody = await screenshot.json();
     expect(screenshot.status).toBe(200);
     expect(screenshotBody.result.content).toContainEqual(
-      expect.objectContaining({ type: 'image', data: Buffer.from('inline-image').toString('base64') }),
+      expect.objectContaining({
+        type: 'image',
+        data: Buffer.from('inline-image').toString('base64'),
+        mimeType: 'image/png',
+      }),
     );
     expect(screenshotBody.result.structuredContent).toEqual({
       ok: true,
-      data: { kind: 'inline', bytes: Buffer.byteLength('inline-image') },
+      data: { kind: 'inline', bytes: Buffer.byteLength('inline-image'), mimeType: 'image/png' },
+    });
+
+    const invalidActions = await call(
+      'tools/call',
+      { name: 'perform_electron_actions', arguments: { actions: [{ kind: 'click' }] } },
+      6,
+    );
+    const invalidActionsBody = await invalidActions.json();
+    expect(invalidActions.status).toBe(200);
+    expect(invalidActionsBody.result.isError).toBe(true);
+
+    const actions = await call(
+      'tools/call',
+      {
+        name: 'perform_electron_actions',
+        arguments: { actions: [{ kind: 'snapshot', maxElements: 10 }] },
+      },
+      7,
+    );
+    const actionsBody = await actions.json();
+    expect(actions.status).toBe(200);
+    expect(actionsBody.result.structuredContent).toEqual({
+      ok: true,
+      data: { results: [{ index: 0, kind: 'snapshot', ok: true, value: null }] },
     });
   });
 });
