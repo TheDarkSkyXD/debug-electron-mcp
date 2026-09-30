@@ -65,6 +65,7 @@ async function mcpRequest(method, params, id, serverPort = port) {
   return {
     body,
     elapsedMs: Number((performance.now() - startedAt).toFixed(2)),
+    payload,
   };
 }
 
@@ -244,11 +245,13 @@ async function benchmarkSequentialMcpToolCalls() {
   const cdpServer = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   let cdpConnections = 0;
   let cdpEvaluations = 0;
+  let cdpRequests = 0;
   cdpServer.on('connection', (socket) => {
     cdpConnections += 1;
     socket.on('message', (data) => {
       const request = JSON.parse(data.toString());
       if (typeof request.id !== 'number') return;
+      cdpRequests += 1;
       if (request.method === 'Runtime.evaluate') cdpEvaluations += 1;
       socket.send(
         JSON.stringify({
@@ -314,13 +317,61 @@ async function benchmarkSequentialMcpToolCalls() {
       id,
       http.port,
     );
+  const actionSequence = [
+    { kind: 'click', target: { kind: 'coordinates', x: 10, y: 20 } },
+    { kind: 'type_text', text: 'fast' },
+    { kind: 'press_key', key: 'Enter' },
+    {
+      kind: 'scroll',
+      deltaY: 120,
+      target: { kind: 'coordinates', x: 10, y: 20 },
+    },
+    { kind: 'open_url', url: 'app://benchmark' },
+  ];
+  const actionWarmupPairs = 3;
+  const actionMeasurementPairs = 20;
+  const cdpRequestsPerActionSequence = 8;
+  let nextActionRequestId = 1_000;
+  const callActions = async (actions) => {
+    const response = await mcpRequest(
+      'tools/call',
+      {
+        name: 'perform_electron_actions',
+        arguments: { projectName: 'benchmark', actions },
+      },
+      nextActionRequestId++,
+      http.port,
+    );
+    const results = response.payload?.result?.structuredContent?.data?.results;
+    if (
+      response.payload?.result?.structuredContent?.ok !== true ||
+      !Array.isArray(results) ||
+      results.length !== actions.length ||
+      results.some((result) => result?.ok !== true)
+    ) {
+      throw new Error(`Action benchmark failed: ${response.body}`);
+    }
+    return response;
+  };
 
   let coldMs;
   const warmSamples = [];
+  const batchSamples = [];
+  const separateSamples = [];
   try {
     coldMs = (await call(500)).elapsedMs;
     for (let index = 0; index < 20; index += 1) {
       warmSamples.push((await call(501 + index)).elapsedMs);
+    }
+    for (let index = 0; index < actionWarmupPairs; index += 1) {
+      await callActions(actionSequence);
+      for (const action of actionSequence) await callActions([action]);
+    }
+    for (let index = 0; index < actionMeasurementPairs; index += 1) {
+      batchSamples.push((await callActions(actionSequence)).elapsedMs);
+      const startedAt = performance.now();
+      for (const action of actionSequence) await callActions([action]);
+      separateSamples.push(Number((performance.now() - startedAt).toFixed(2)));
     }
   } finally {
     await Promise.all([http.close(), automation.close()]);
@@ -333,18 +384,37 @@ async function benchmarkSequentialMcpToolCalls() {
     );
   }
 
-  if (discoveryRequests !== 1 || cdpConnections !== 1 || cdpEvaluations !== 21) {
+  const expectedCdpRequests =
+    1 +
+    cdpEvaluations +
+    (actionWarmupPairs + actionMeasurementPairs) * 2 * cdpRequestsPerActionSequence;
+  if (
+    discoveryRequests !== 1 ||
+    cdpConnections !== 1 ||
+    cdpEvaluations !== 21 ||
+    cdpRequests !== expectedCdpRequests
+  ) {
     throw new Error(
-      `Sequential MCP reuse failed: ${discoveryRequests} discovery request(s), ${cdpConnections} CDP connection(s), ${cdpEvaluations} evaluation(s).`,
+      `Sequential MCP reuse failed: ${discoveryRequests} discovery request(s), ${cdpConnections} CDP connection(s), ${cdpEvaluations} evaluation(s), ${cdpRequests}/${expectedCdpRequests} total CDP request(s).`,
     );
   }
 
   return {
     coldMs,
     warm: summarizeLatency(warmSamples),
+    fiveActions: {
+      batched: summarizeLatency(batchSamples),
+      separateCalls: summarizeLatency(separateSamples),
+      medianSpeedup: Number(
+        (
+          summarizeLatency(separateSamples).medianMs / summarizeLatency(batchSamples).medianMs
+        ).toFixed(2),
+      ),
+    },
     discoveryRequests,
     cdpConnections,
     cdpEvaluations,
+    cdpRequests,
   };
 }
 
